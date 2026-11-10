@@ -28,12 +28,13 @@ python -m pytest            # unit tests on synthetic data; no licensed data nee
 Then place the sources as described in [`data/README.md`](data/README.md) and run:
 
 ```bash
-python -m eusoil points          # clean and join the tables; write the audit
-python -m eusoil worldclim       # climate at the points (local GeoTIFFs)
-python -m eusoil dem             # elevation and slope (internet access)
-python -m eusoil terraclimate    # climate 2015-2018 (internet access)
-python -m eusoil table           # the modelling table
-python -m eusoil precision       # the H1 precision check
+python -m eusoil points                            # clean and join the tables; write the audit
+python -m eusoil dem                               # elevation and slope (internet access)
+python -m eusoil terraclimate --period 1991-2020   # climate block: 1991-2020 normals (internet access)
+python -m eusoil terraclimate --period 2015-2018   # climate-period sensitivity run (internet access)
+python -m eusoil worldclim                         # optional internal check (local GeoTIFFs; not published)
+python -m eusoil table                             # the modelling table
+python -m eusoil precision                         # the H1 precision check
 ```
 
 ## Related project
@@ -55,8 +56,12 @@ aggregated results only.
 
 Land cover: d'Andrimont, R. et al. (2020). Harmonised LUCAS in-situ land cover and
 use database for field surveys from 2006 to 2018 in the European Union.
-*Scientific Data*, 7, 352. Climate: WorldClim 2.1 (Fick & Hijmans, 2017) and
-TerraClimate (Abatzoglou et al., 2018). Elevation: Copernicus DEM GLO-90.
+*Scientific Data*, 7, 352. Climate: TerraClimate (Abatzoglou et al., 2018),
+public domain under CC0. WorldClim 2.1 (Fick & Hijmans, 2017) serves only as an
+internal resolution check: its licence does not allow redistribution, so no
+value derived from it is published here. Elevation: Copernicus DEM GLO-90
+© DLR e.V. 2010-2014 and © Airbus Defence and Space GmbH 2014-2018, provided
+under COPERNICUS by the European Union and ESA.
 
 ## Author
 

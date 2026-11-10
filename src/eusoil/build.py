@@ -8,8 +8,10 @@ Two products:
     from the tabular sources only.
 
 ``data/processed/modelling_table.parquet``
-    ``points`` joined with the point extractions (WorldClim, DEM and,
-    optionally, TerraClimate), with projected coordinates.
+    ``points`` joined with the point extractions, with projected
+    coordinates: TerraClimate 1991-2020 (climate block C) and the DEM are
+    required; TerraClimate 2015-2018 and WorldClim (internal check) are
+    optional sensitivity extractions.
 
 The audit tables written to ``reports/tables/`` contain counts and shares
 only, never point-level soil values, so they can be published without
@@ -186,14 +188,27 @@ def add_projected_coordinates(df: pd.DataFrame, crs: dict[str, str]) -> pd.DataF
 
 
 def build_modelling_table(
-    points: pd.DataFrame, extractions: list[pd.DataFrame], config: dict[str, Any]
+    points: pd.DataFrame,
+    extractions: list[tuple[str, pd.DataFrame]],
+    config: dict[str, Any],
 ) -> pd.DataFrame:
-    """Join the point extractions and add projected coordinates."""
+    """Join the named point extractions, add projected coordinates, check the blocks.
+
+    Raises ``ValueError`` if an extraction repeats a column already in the
+    table (an interim file written under an older naming scheme), or if a
+    predictor named in ``config["blocks"]`` is absent from the result.
+    """
     table = points
-    for extraction in extractions:
+    for name, extraction in extractions:
+        clash = (set(extraction.columns) - {"point_id"}) & set(table.columns)
+        if clash:
+            raise ValueError(f"{name} repeats columns already in the table: {sorted(clash)}")
         table = table.merge(extraction, on="point_id", how="left", validate="one_to_one")
     table = add_projected_coordinates(table, config["crs"])
     table["country"] = table["nuts0"]
+    absent = [c for cols in config["blocks"].values() for c in cols if c not in table.columns]
+    if absent:
+        raise ValueError(f"Predictors named in config blocks are missing: {absent}")
     return table
 
 

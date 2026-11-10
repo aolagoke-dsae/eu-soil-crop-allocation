@@ -75,3 +75,14 @@ def test_excluded_code_counts_is_sorted_with_a_clean_index():
     out = excluded_code_counts(df)
     assert out["lc1"].tolist() == ["E30", "B43"]
     assert isinstance(out.index, pd.RangeIndex)  # written to CSV without an index column
+
+
+def test_climate_block_is_terraclimate_normals_and_sensitivity_sets_match_it():
+    cfg = load_config()
+    block = cfg["blocks"]["C"]
+    assert all(name.startswith("tc9120_bio") for name in block)
+    numbers = [name.removeprefix("tc9120_bio") for name in block]
+    for prefix in cfg["climate_sensitivity"].values():
+        assert prefix != "tc9120_bio"
+        swapped = [f"{prefix}{n}" for n in numbers]
+        assert len(set(swapped)) == len(block)

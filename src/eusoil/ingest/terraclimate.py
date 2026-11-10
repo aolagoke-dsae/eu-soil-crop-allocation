@@ -1,25 +1,24 @@
-"""TerraClimate 2015-2018 at the survey points, for the climate-period sensitivity run.
+"""TerraClimate bioclimatic variables at the survey points (protocol A7).
 
-The primary climate block uses WorldClim normals (1970-2000). The protocol's
-sensitivity run asks whether the conclusions hold with the climate of the
-years just before the 2018 survey. TerraClimate (monthly, about 4 km) is read
-from Microsoft's Planetary Computer as a Zarr store; only the European
-window and the months 2015-2018 are loaded.
+TerraClimate (Abatzoglou et al., 2018; monthly, about 4 km, public domain
+under CC0) supplies the climate block C. It is read from Microsoft's
+Planetary Computer as a Zarr store; only the European window and the
+months of the requested period are loaded. Two periods are used:
 
-From the 2015-2018 monthly climatology, the six bioclimatic variables of the
-primary block are computed with WorldClim's definitions (as in
-``dismo::biovars``):
+* ``1991-2020``, the current WMO standard normal: the primary climate block,
+  columns ``tc9120_bio*``.
+* ``2015-2018``, the years just before the 2018 survey: the climate-period
+  sensitivity run, columns ``tc1518_bio*``.
 
-* ``tc_bio1``  annual mean temperature, mean of (tmax + tmin) / 2
-* ``tc_bio4``  temperature seasonality, 100 x standard deviation of monthly means
-* ``tc_bio6``  minimum temperature of the coldest month
-* ``tc_bio12`` annual precipitation
-* ``tc_bio15`` precipitation seasonality, coefficient of variation of (monthly precipitation + 1)
-* ``tc_bio17`` precipitation of the driest quarter (three consecutive months, wrapping the year)
+From each period's monthly climatology, the 19 bioclimatic variables are
+computed with WorldClim's definitions (as in ``dismo::biovars``; quarters
+are three consecutive months, wrapping the year). The models use the six in
+``config['blocks']['C']`` (bio1, bio4, bio6, bio12, bio15, bio17); all 19 are
+kept for the cluster-based climate subset check.
 
 Points whose nearest cell is missing (at the coast) take the nearest cell
-with data. The distance to the cell used is stored, so the analysis can
-check it.
+with data. The distance to the cell used is stored as ``<tag>_cell_km``, so
+the analysis can check it.
 
 Reference: Abatzoglou, J. T., Dobrowski, S. Z., Parks, S. A. & Hegewisch,
 K. C. (2018). TerraClimate. Scientific Data, 5, 170191.
@@ -28,14 +27,22 @@ https://doi.org/10.1038/sdata.2017.191
 
 from __future__ import annotations
 
+import logging
+
 import numpy as np
 import pandas as pd
 from scipy.spatial import cKDTree
 
+LOG = logging.getLogger(__name__)
+
 STAC_URL = "https://planetarycomputer.microsoft.com/api/stac/v1"
 COLLECTION = "terraclimate"
 VARIABLES = ("tmax", "tmin", "ppt")
-YEARS = ("2015-01-01", "2018-12-31")
+PERIODS = {
+    "1991-2020": {"years": ("1991-01-01", "2020-12-31"), "tag": "tc9120"},
+    "2015-2018": {"years": ("2015-01-01", "2018-12-31"), "tag": "tc1518"},
+}
+PRIMARY_PERIOD = "1991-2020"
 EUROPE_BOX = {"lat": (30.0, 75.0), "lon": (-15.0, 40.0)}
 
 
@@ -78,7 +85,7 @@ def open_terraclimate():  # pragma: no cover - needs network access
     return xr.open_dataset(asset.href, **kwargs)
 
 
-def monthly_climatology(ds, variables=VARIABLES, years=YEARS, box=EUROPE_BOX):
+def monthly_climatology(ds, years, variables=VARIABLES, box=EUROPE_BOX):
     """Mean of each calendar month over ``years`` in the window ``box``.
 
     Reads one variable and one year at a time and keeps running sums in
@@ -97,12 +104,17 @@ def monthly_climatology(ds, variables=VARIABLES, years=YEARS, box=EUROPE_BOX):
 
     month = window["time"].dt.month.to_numpy()
     year = window["time"].dt.year.to_numpy()
+    first, last = int(years[0][:4]), int(years[1][:4])
+    missing = sorted(set(range(first, last + 1)) - set(year.tolist()))
+    if missing:
+        raise ValueError(f"TerraClimate store lacks the years {missing} of {first}-{last}")
     shape = (12, window.sizes["lat"], window.sizes["lon"])
     out = {}
     for name in variables:
         total = np.zeros(shape)
         count = np.zeros(12)
-        for yr in np.unique(year):
+        for k, yr in enumerate(np.unique(year), start=1):
+            LOG.info("TerraClimate %s %d (%d/%d)", name, yr, k, last - first + 1)
             idx = np.flatnonzero(year == yr)
             block = window[name].isel(time=idx).transpose("time", "lat", "lon").to_numpy()
             for i, m in zip(idx, month[idx], strict=True):
@@ -121,25 +133,54 @@ def monthly_climatology(ds, variables=VARIABLES, years=YEARS, box=EUROPE_BOX):
     )
 
 
+def _quarters(monthly: np.ndarray) -> np.ndarray:
+    """Sums over the 12 wrapping three-month windows; shape (12, n)."""
+    return np.stack([monthly[[m, (m + 1) % 12, (m + 2) % 12]].sum(axis=0) for m in range(12)])
+
+
 def bioclim_from_monthly(
     tmax: np.ndarray, tmin: np.ndarray, ppt: np.ndarray
 ) -> dict[str, np.ndarray]:
-    """WorldClim bioclimatic variables from 12-month arrays (axis 0 = month).
+    """The 19 WorldClim bioclimatic variables from 12-month arrays (axis 0 = month).
 
-    Inputs have shape (12, n_points). Returns arrays of length n_points.
+    Inputs have shape (12, n_points), temperatures in deg C and precipitation
+    in mm. Returns ``bio1`` ... ``bio19``, each of length n_points, with the
+    definitions of ``dismo::biovars`` (standard deviations with n - 1).
     """
     if tmax.shape[0] != 12 or tmin.shape != tmax.shape or ppt.shape != tmax.shape:
         raise ValueError("Expected three arrays of shape (12, n)")
     tavg = (tmax + tmin) / 2.0
     precip_plus_one = ppt + 1.0
-    quarters = np.stack([ppt[[m, (m + 1) % 12, (m + 2) % 12]].sum(axis=0) for m in range(12)])
+    t_quarter = _quarters(tavg) / 3.0  # mean temperature of each quarter
+    p_quarter = _quarters(ppt)  # precipitation of each quarter
+    cols = np.arange(tmax.shape[1])
+
+    def at(values: np.ndarray, quarter: np.ndarray) -> np.ndarray:
+        return values[quarter, cols]
+
+    bio5 = tmax.max(axis=0)
+    bio6 = tmin.min(axis=0)
+    bio2 = (tmax - tmin).mean(axis=0)
     return {
-        "tc_bio1": tavg.mean(axis=0),
-        "tc_bio4": tavg.std(axis=0, ddof=1) * 100.0,
-        "tc_bio6": tmin.min(axis=0),
-        "tc_bio12": ppt.sum(axis=0),
-        "tc_bio15": precip_plus_one.std(axis=0, ddof=1) / precip_plus_one.mean(axis=0) * 100.0,
-        "tc_bio17": quarters.min(axis=0),
+        "bio1": tavg.mean(axis=0),
+        "bio2": bio2,
+        "bio3": bio2 / (bio5 - bio6) * 100.0,
+        "bio4": tavg.std(axis=0, ddof=1) * 100.0,
+        "bio5": bio5,
+        "bio6": bio6,
+        "bio7": bio5 - bio6,
+        "bio8": at(t_quarter, p_quarter.argmax(axis=0)),
+        "bio9": at(t_quarter, p_quarter.argmin(axis=0)),
+        "bio10": t_quarter.max(axis=0),
+        "bio11": t_quarter.min(axis=0),
+        "bio12": ppt.sum(axis=0),
+        "bio13": ppt.max(axis=0),
+        "bio14": ppt.min(axis=0),
+        "bio15": precip_plus_one.std(axis=0, ddof=1) / precip_plus_one.mean(axis=0) * 100.0,
+        "bio16": p_quarter.max(axis=0),
+        "bio17": p_quarter.min(axis=0),
+        "bio18": at(p_quarter, t_quarter.argmax(axis=0)),
+        "bio19": at(p_quarter, t_quarter.argmin(axis=0)),
     }
 
 
@@ -162,10 +203,20 @@ def nearest_valid_cells(
     return rows[index], cols[index], distance_m / 1000.0
 
 
-def extract_terraclimate(points: pd.DataFrame, climatology=None) -> pd.DataFrame:
-    """Return ``tc_bio*`` for every point, plus the distance to the cell used."""
+def extract_terraclimate(
+    points: pd.DataFrame, period: str = PRIMARY_PERIOD, climatology=None
+) -> pd.DataFrame:
+    """``<tag>_bio*`` for every point, plus ``<tag>_cell_km``, the distance to the cell used.
+
+    ``period`` is a key of ``PERIODS``. ``climatology`` (month x lat x lon)
+    may be passed directly, which the tests do; otherwise it is computed
+    from the Planetary Computer store.
+    """
+    if period not in PERIODS:
+        raise ValueError(f"Unknown period {period!r}; choose from {sorted(PERIODS)}")
+    tag = PERIODS[period]["tag"]
     if climatology is None:
-        climatology = monthly_climatology(open_terraclimate())
+        climatology = monthly_climatology(open_terraclimate(), years=PERIODS[period]["years"])
     grid_lat = climatology["lat"].to_numpy()
     grid_lon = climatology["lon"].to_numpy()
     tmax = climatology["tmax"].transpose("month", "lat", "lon").to_numpy()
@@ -178,6 +229,8 @@ def extract_terraclimate(points: pd.DataFrame, climatology=None) -> pd.DataFrame
         grid_lat, grid_lon, valid, points["lat"].to_numpy(), points["lon"].to_numpy()
     )
     bio = bioclim_from_monthly(tmax[:, row, col], tmin[:, row, col], ppt[:, row, col])
-    out = pd.DataFrame({"point_id": points["point_id"].to_numpy(), **bio})
-    out["tc_cell_distance_km"] = dist
+    out = pd.DataFrame({"point_id": points["point_id"].to_numpy()})
+    for name, values in bio.items():
+        out[f"{tag}_{name}"] = values
+    out[f"{tag}_cell_km"] = dist
     return out

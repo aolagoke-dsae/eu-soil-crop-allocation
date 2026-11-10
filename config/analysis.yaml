@@ -18,8 +18,8 @@ paths:
   texture: LUCAS_Texture_All_10032025/LUCAS_Text_All_10032025.csv
   landcover_2018: LUCAS/LUCAS_harmonised/1_table/lucas_harmo_uf_2018.csv
   nuts: NUTS2016            # GISCO NUTS 2016, 1:1 million, EPSG:3035
-  worldclim_30s: wc2.1_30s_bio
-  worldclim_2_5m: wc2.1_2.5m_bio   # kept for the resolution sensitivity run
+  worldclim_30s: wc2.1_30s_bio     # internal resolution check only (protocol A7)
+  worldclim_2_5m: wc2.1_2.5m_bio   # internal resolution check only (protocol A7)
 
 crs:
   geographic: "EPSG:4326"
@@ -85,7 +85,8 @@ target:
              fodder_and_temporary_grassland]
     permanent_crops: [olive_groves, vineyards_and_orchards]
     grassland: [permanent_grassland]
-  # Input intensity, fixed a priori for H3 (reference group: permanent_grassland).
+  # Input intensity, fixed a priori; descriptive only since the fertilisation
+  # hypothesis was set aside (protocol A12).
   input_intensity:
     high: [maize_and_root_crops]
     medium: [wheat, other_cereals, oilseeds_and_pulses, vineyards_and_orchards]
@@ -96,11 +97,20 @@ target:
 # ---------------------------------------------------------------------------
 blocks:
   G: [easting, northing, elevation_m, slope_deg]
-  C: [bio1, bio4, bio6, bio12, bio15, bio17]
+  # TerraClimate 1991-2020 normals (protocol A7)
+  C: [tc9120_bio1, tc9120_bio4, tc9120_bio6, tc9120_bio12, tc9120_bio15, tc9120_bio17]
   S_inh: [ph_cacl2, caco3_log1p, caco3_present, clay, silt]
   S_nut: [n_log, p_log, k_log, p_below_lod]
   K: [country]
   organic_carbon: [oc_log]   # assigned to S_inh or S_nut by sensitivity run
+
+# Climate sensitivity runs: the same six variables from another source swap
+# into block C by prefix (protocol: Sensitivity and robustness analyses).
+# WorldClim runs are internal checks; nothing derived from them is published.
+climate_sensitivity:
+  period_2015_2018: tc1518_bio
+  worldclim_30s: wc30s_bio
+  worldclim_2_5m: wc25m_bio
 
 # ---------------------------------------------------------------------------
 # Precision check (protocol: Inferential statistics, "Precision check")

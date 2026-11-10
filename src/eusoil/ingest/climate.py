@@ -6,9 +6,9 @@ point. A coastal point whose pixel is sea (no data) takes the nearest pixel
 with data within ``fill_radius_px`` pixels; how many points needed this, and
 how far, is returned so the audit can report it.
 
-All 19 variables are extracted, so the cluster-based climate subset (a
-sensitivity run) needs no second pass; the models use the subset named in
-``config['blocks']['C']``.
+WorldClim is an internal resolution check only (protocol A7): its licence
+does not allow redistribution, so nothing derived from it is published. The
+primary climate block comes from TerraClimate (``eusoil.ingest.terraclimate``).
 
 Reference: Fick, S. E. & Hijmans, R. J. (2017). WorldClim 2: new 1-km spatial
 resolution climate surfaces for global land areas. International Journal of
@@ -83,7 +83,7 @@ def sample_raster(
 
 
 def extract_worldclim(
-    points: pd.DataFrame, directory: Path, prefix: str = "bio", fill_radius_px: int = 3
+    points: pd.DataFrame, directory: Path, prefix: str = "wc30s_bio", fill_radius_px: int = 3
 ) -> pd.DataFrame:
     """Return one row per point with ``<prefix>1`` ... ``<prefix>19``.
 

@@ -4,9 +4,12 @@ Commands, in the order they are normally run:
 
 ``points``        clean the tabular sources, write ``data/interim/points.parquet``,
                   the sample-flow table and the audit tables
-``worldclim``     WorldClim bio variables at the points (local GeoTIFFs)
 ``dem``           elevation and slope from Copernicus GLO-90 (needs internet access)
-``terraclimate``  TerraClimate 2015-2018 at the points (needs internet access)
+``terraclimate``  TerraClimate bioclimatic variables at the points (needs internet
+                  access); ``--period 1991-2020`` is the primary climate block,
+                  ``--period 2015-2018`` the climate-period sensitivity run
+``worldclim``     WorldClim bio variables at the points (local GeoTIFFs); an
+                  internal resolution check only, never published (protocol A7)
 ``table``         join everything into ``data/processed/modelling_table.parquet``
 ``precision``     the H1 precision check (simulation on labels and coordinates)
 
@@ -55,9 +58,9 @@ def cmd_worldclim(args, config, paths) -> None:
     from eusoil.ingest.climate import extract_worldclim
 
     directory = paths.worldclim_30s if args.resolution == "30s" else paths.worldclim_2_5m
-    # 30s is the primary climate block (bio1..bio19); 2.5m is the resolution
-    # sensitivity run (wc25m_bio1..wc25m_bio19).
-    prefix = "bio" if args.resolution == "30s" else "wc25m_bio"
+    # WorldClim is an internal resolution check (protocol A7): its licence does
+    # not allow redistribution, so no output derived from it is published.
+    prefix = "wc30s_bio" if args.resolution == "30s" else "wc25m_bio"
     result = extract_worldclim(_points(paths), directory, prefix=prefix)
     out = paths.interim / f"worldclim_{args.resolution}.parquet"
     result.to_parquet(out, index=False)
@@ -86,34 +89,62 @@ def cmd_dem(args, config, paths) -> None:
 
 
 def cmd_terraclimate(args, config, paths) -> None:
-    from eusoil.ingest.terraclimate import extract_terraclimate
+    from eusoil.ingest.terraclimate import PERIODS, extract_terraclimate
 
-    result = extract_terraclimate(_points(paths))
-    result.to_parquet(paths.interim / "terraclimate_2015_2018.parquet", index=False)
+    result = extract_terraclimate(_points(paths), period=args.period)
+    out = paths.interim / f"terraclimate_{args.period.replace('-', '_')}.parquet"
+    result.to_parquet(out, index=False)
+    tag = PERIODS[args.period]["tag"]
     LOG.info(
-        "terraclimate: %d points, nearest-cell distance max %.1f km",
+        "terraclimate %s: %d points, nearest-cell distance max %.1f km",
+        args.period,
         len(result),
-        float(result["tc_cell_distance_km"].max()),
+        float(result[f"{tag}_cell_km"].max()),
     )
+
+
+# Interim files joined into the modelling table: file -> (column prefix it
+# must carry, command that writes it). An older file without the prefix was
+# written under a previous naming scheme and must be regenerated.
+REQUIRED_EXTRACTIONS = {
+    "terraclimate_1991_2020.parquet": ("tc9120_bio", "terraclimate --period 1991-2020"),
+    "dem.parquet": ("elevation_m", "dem"),
+}
+OPTIONAL_EXTRACTIONS = {
+    "terraclimate_2015_2018.parquet": ("tc1518_bio", "terraclimate --period 2015-2018"),
+    "worldclim_30s.parquet": ("wc30s_bio", "worldclim --resolution 30s"),
+    "worldclim_2.5m.parquet": ("wc25m_bio", "worldclim --resolution 2.5m"),
+}
+
+
+def _read_extraction(path: Path, prefix: str, command: str) -> pd.DataFrame:
+    frame = pd.read_parquet(path)
+    if not any(column.startswith(prefix) for column in frame.columns):
+        sys.exit(
+            f"{path} has no '{prefix}*' columns: it predates the current naming. "
+            f"Re-run 'python -m eusoil {command}'."
+        )
+    return frame
 
 
 def cmd_table(args, config, paths) -> None:
     points = _points(paths)
-    required = {"worldclim_30s.parquet": "worldclim", "dem.parquet": "dem"}
-    optional = ["worldclim_2.5m.parquet", "terraclimate_2015_2018.parquet"]
     extractions = []
-    for name, command in required.items():
+    for name, (prefix, command) in REQUIRED_EXTRACTIONS.items():
         path = paths.interim / name
         if not path.exists():
             sys.exit(f"{path} not found: run 'python -m eusoil {command}' first")
-        extractions.append(pd.read_parquet(path))
-    for name in optional:
+        extractions.append((name, _read_extraction(path, prefix, command)))
+    for name, (prefix, command) in OPTIONAL_EXTRACTIONS.items():
         path = paths.interim / name
         if path.exists():
-            extractions.append(pd.read_parquet(path))
+            extractions.append((name, _read_extraction(path, prefix, command)))
         else:
             LOG.warning("%s not found; the table is built without it", name)
-    table = build_modelling_table(points, extractions, config)
+    try:
+        table = build_modelling_table(points, extractions, config)
+    except ValueError as error:
+        sys.exit(str(error))
     table.to_parquet(paths.processed / "modelling_table.parquet", index=False)
     LOG.info("modelling table: %d rows, %d columns", *table.shape)
 
@@ -141,10 +172,11 @@ def main(argv: list[str] | None = None) -> None:
     sub = parser.add_subparsers(dest="command", required=True)
     p = sub.add_parser("points", help="clean the tabular sources and write the audit")
     p.add_argument("--landcover", help="override the harmonised 2018 table (testing)")
-    p = sub.add_parser("worldclim", help="WorldClim bio variables at the points")
+    p = sub.add_parser("worldclim", help="WorldClim bio variables (internal check only)")
     p.add_argument("--resolution", choices=["30s", "2.5m"], default="30s")
     sub.add_parser("dem", help="elevation and slope from Copernicus GLO-90 (internet)")
-    sub.add_parser("terraclimate", help="TerraClimate 2015-2018 (internet)")
+    p = sub.add_parser("terraclimate", help="TerraClimate bioclimatic variables (internet)")
+    p.add_argument("--period", choices=["1991-2020", "2015-2018"], default="1991-2020")
     sub.add_parser("table", help="build the modelling table")
     sub.add_parser("precision", help="H1 precision check")
     args = parser.parse_args(argv)

@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from eusoil.build import add_projected_coordinates, build_points
+from eusoil.build import add_projected_coordinates, build_modelling_table, build_points
 from eusoil.clean import clean_soil
 from eusoil.flow import SampleFlow
 from eusoil.ingest.soil import read_soil
@@ -75,3 +75,32 @@ def test_projected_coordinates_are_in_laea_metres(config):
     # ETRS89-LAEA: Frankfurt lies near x = 4.21e6 m, y = 3.00e6 m.
     assert out["easting"].iloc[0] == pytest.approx(4.21e6, rel=0.01)
     assert out["northing"].iloc[0] == pytest.approx(3.00e6, rel=0.01)
+
+
+def _table_inputs(config):
+    points = pd.DataFrame(
+        {"point_id": [1, 2], "lat": [50.0, 51.0], "lon": [8.0, 9.0], "nuts0": ["DE", "DE"]}
+    )
+    names = [c for cols in config["blocks"].values() for c in cols]
+    values = pd.DataFrame(
+        {
+            "point_id": [1, 2],
+            **{c: [0.0, 1.0] for c in names if c not in {"easting", "northing", "country"}},
+        }
+    )
+    return points, values
+
+
+def test_modelling_table_joins_extractions_and_checks_the_blocks(config):
+    points, values = _table_inputs(config)
+    table = build_modelling_table(points, [("all.parquet", values)], config)
+    assert {"easting", "northing", "country", "tc9120_bio1"} <= set(table.columns)
+    with pytest.raises(ValueError, match="missing"):
+        build_modelling_table(points, [("x", values.drop(columns="tc9120_bio1"))], config)
+
+
+def test_modelling_table_rejects_an_extraction_with_clashing_columns(config):
+    points, values = _table_inputs(config)
+    old = pd.DataFrame({"point_id": [1, 2], "tc9120_bio1": [5.0, 6.0]})
+    with pytest.raises(ValueError, match="old.parquet repeats columns"):
+        build_modelling_table(points, [("all.parquet", values), ("old.parquet", old)], config)

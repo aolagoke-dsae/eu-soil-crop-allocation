@@ -57,7 +57,7 @@ def test_worldclim_requires_all_nineteen_layers(tmp_path):
     _write_raster(tmp_path / "wc2.1_30s_bio_19.tif", np.full((2, 2), 7.0))
     points = pd.DataFrame({"point_id": [1], "lon": [0.05], "lat": [49.95]})
     out = extract_worldclim(points, tmp_path)
-    assert out.loc[0, "bio19"] == 7.0 and out.loc[0, "bio_fill_px"] == 0.0
+    assert out.loc[0, "wc30s_bio19"] == 7.0 and out.loc[0, "wc30s_bio_fill_px"] == 0.0
 
 
 @pytest.mark.parametrize(
@@ -97,14 +97,27 @@ def test_bioclim_definitions_on_known_series():
     tmin = tmax - 10
     ppt = np.tile(np.array([5, 1, 2, 50, 50, 50, 50, 50, 50, 50, 50, 3.0]).reshape(12, 1), (1, 2))
     bio = bioclim_from_monthly(tmax, tmin, ppt)
-    assert bio["tc_bio1"][0] == pytest.approx(np.mean((tmax[:, 0] + tmin[:, 0]) / 2))
-    assert bio["tc_bio6"][0] == 0.0
-    assert bio["tc_bio12"][0] == pytest.approx(ppt[:, 0].sum())
+    assert sorted(bio, key=lambda k: int(k[3:])) == [f"bio{i}" for i in range(1, 20)]
+    tavg = (tmax[:, 0] + tmin[:, 0]) / 2  # 5, 6, ..., 16
+    assert bio["bio1"][0] == pytest.approx(tavg.mean())
+    assert bio["bio2"][0] == pytest.approx(10.0)
+    assert bio["bio5"][0] == 21.0 and bio["bio6"][0] == 0.0 and bio["bio7"][0] == 21.0
+    assert bio["bio3"][0] == pytest.approx(10.0 / 21.0 * 100)
+    assert bio["bio12"][0] == pytest.approx(ppt[:, 0].sum())
+    assert bio["bio13"][0] == 50.0 and bio["bio14"][0] == 1.0
     # Driest quarter: Jan + Feb + Mar = 5 + 1 + 2 = 8 (Dec + Jan + Feb = 9).
-    assert bio["tc_bio17"][0] == pytest.approx(8.0)
+    assert bio["bio17"][0] == pytest.approx(8.0)
+    assert bio["bio9"][0] == pytest.approx(tavg[[0, 1, 2]].mean())  # its temperature
+    # Warmest quarter Oct-Dec (14, 15, 16 deg C): its precipitation is 50 + 50 + 3.
+    assert bio["bio10"][0] == pytest.approx(15.0)
+    assert bio["bio18"][0] == pytest.approx(103.0)
+    # Coldest quarter Jan-Mar (5, 6, 7 deg C): the driest quarter as well.
+    assert bio["bio11"][0] == pytest.approx(6.0)
+    assert bio["bio19"][0] == pytest.approx(8.0)
+    assert bio["bio16"][0] == pytest.approx(150.0)
     ppt_wrap = ppt.copy()
     ppt_wrap[2] = 40.0  # March wetter: the quarter wrapping the year end (9) is now driest
-    assert bioclim_from_monthly(tmax, tmin, ppt_wrap)["tc_bio17"][0] == pytest.approx(9.0)
+    assert bioclim_from_monthly(tmax, tmin, ppt_wrap)["bio17"][0] == pytest.approx(9.0)
 
 
 def test_bioclim_rejects_wrong_shapes():
@@ -184,6 +197,12 @@ def test_monthly_climatology_rejects_an_empty_period():
         monthly_climatology(_synthetic_terraclimate(), years=("2030-01-01", "2030-12-31"))
 
 
+def test_monthly_climatology_rejects_a_period_the_store_does_not_cover():
+    # The store holds 2015-2016; asking for 2015-2017 must not average two years quietly.
+    with pytest.raises(ValueError, match=r"lacks the years \[2017\]"):
+        monthly_climatology(_synthetic_terraclimate(), years=("2015-01-01", "2017-12-31"))
+
+
 def test_extract_terraclimate_uses_the_nearest_cell_with_data():
     clim = monthly_climatology(
         _synthetic_terraclimate(),
@@ -191,12 +210,25 @@ def test_extract_terraclimate_uses_the_nearest_cell_with_data():
         box={"lat": (49.0, 53.0), "lon": (7.0, 11.0)},
     )
     points = pd.DataFrame({"point_id": [1, 2], "lat": [52.0, 50.0], "lon": [8.0, 10.0]})
-    out = extract_terraclimate(points, climatology=clim)
+    out = extract_terraclimate(points, period="2015-2018", climatology=clim)
     assert out["point_id"].tolist() == [1, 2]
-    assert out["tc_cell_distance_km"].iloc[0] > 50  # moved off the missing cell
-    assert out["tc_cell_distance_km"].iloc[1] < 1
-    assert np.allclose(out["tc_bio12"], 780.0)  # 10 * (1 + ... + 12)
-    assert np.allclose(out["tc_bio1"], 10.5 + 6.5 - 5.0)
+    assert out["tc1518_cell_km"].iloc[0] > 50  # moved off the missing cell
+    assert out["tc1518_cell_km"].iloc[1] < 1
+    assert np.allclose(out["tc1518_bio12"], 780.0)  # 10 * (1 + ... + 12)
+    assert np.allclose(out["tc1518_bio1"], 10.5 + 6.5 - 5.0)
+    assert {f"tc1518_bio{i}" for i in range(1, 20)} <= set(out.columns)
+
+
+def test_extract_terraclimate_names_columns_by_period_and_rejects_unknown_ones():
+    clim = monthly_climatology(
+        _synthetic_terraclimate(),
+        years=("2015-01-01", "2016-12-31"),
+        box={"lat": (49.0, 53.0), "lon": (7.0, 11.0)},
+    )
+    points = pd.DataFrame({"point_id": [1], "lat": [50.0], "lon": [10.0]})
+    assert "tc9120_bio1" in extract_terraclimate(points, climatology=clim).columns
+    with pytest.raises(ValueError, match="Unknown period"):
+        extract_terraclimate(points, period="1970-2000", climatology=clim)
 
 
 def _write_glo_like_tiles(directory: Path, res: float = 0.1) -> None:
