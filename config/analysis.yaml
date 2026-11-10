@@ -1,0 +1,113 @@
+# Analysis configuration for eu-soil-crop-allocation.
+#
+# Every choice that the analysis protocol (docs/PROTOCOL.md) fixes in advance
+# lives here, so that code never hard-codes a threshold. Changing a value in
+# this file after the sealed test blocks are opened is a protocol amendment
+# and must be recorded as one.
+
+seed: 20261110
+
+paths:
+  raw: data/raw
+  interim: data/interim
+  processed: data/processed
+  reports: reports
+
+  # Source files, relative to paths.raw
+  soil: LUCAS-SOIL-2018-data/LUCAS-SOIL-2018-v2/LUCAS-SOIL-2018.csv
+  texture: LUCAS_Texture_All_10032025/LUCAS_Text_All_10032025.csv
+  landcover_2018: LUCAS/LUCAS_harmonised/1_table/lucas_harmo_uf_2018.csv
+  nuts: NUTS2016            # GISCO NUTS 2016, 1:1 million, EPSG:3035
+  worldclim_30s: wc2.1_30s_bio
+  worldclim_2_5m: wc2.1_2.5m_bio   # kept for the resolution sensitivity run
+
+crs:
+  geographic: "EPSG:4326"
+  projected: "EPSG:3035"    # ETRS89-LAEA Europe; all distances and blocks
+
+# ---------------------------------------------------------------------------
+# Cleaning rules (protocol: Data quality and cleaning, Amendment A1)
+# ---------------------------------------------------------------------------
+cleaning:
+  keep_depth: "0-20 cm"
+  # Limits of detection from the JRC 2018 LUCAS Soil report, Table 3
+  # (units: OC, N, CaCO3 g/kg; P, K mg/kg; EC mS/m). Every value below its
+  # limit, whether reported as "< LOD" or as a number, is treated as
+  # left-censored at the limit and flagged.
+  lod:
+    oc_g_kg: 2.0
+    n_g_kg: 0.2
+    p_mg_kg: 10.0      # Olsen P, ISO 11263
+    k_mg_kg: 10.0
+    ec_ms_m: 0.1
+  # Substitution used for the primary analysis; the sensitivity runs use the
+  # other factors listed (value = factor * LOD).
+  lod_substitution_factor: 0.5
+  lod_sensitivity_factors: [0.7071, 1.0]
+  # CaCO3: per the 2018 readme, NA means "absent, pH < 7" and "< LOD" means
+  # "absent, pH >= 7"; every measured value is >= 1 g/kg. Both codes are 0.
+  caco3_absent_value: 0.0
+  # Domain plausibility ranges. Values outside are flagged, never deleted
+  # automatically.
+  plausible:
+    ph_cacl2: [3.0, 10.5]
+    oc_g_kg: [0.0, 600.0]
+    n_g_kg: [0.0, 50.0]
+    p_mg_kg: [0.0, 1000.0]
+    k_mg_kg: [0.0, 10000.0]
+    ec_ms_m: [0.0, 2000.0]
+  organic_soil_oc_g_kg: 120.0     # flag for the organic-soil sensitivity run
+  # Land cover purity: lc1_perc classes counted as "pure" for the
+  # uncertain-label sensitivity run.
+  pure_lc1_perc: ["> 75 %", "50 - 75 %"]
+  # Countries with too few agricultural points to be modelled or held out.
+  exclude_countries: ["MT"]
+
+# ---------------------------------------------------------------------------
+# Target definition (protocol: Target definition, Amendment A2)
+# ---------------------------------------------------------------------------
+target:
+  min_class_size: 300
+  # Level 2 crop groups. Codes not listed are excluded, and the count of each
+  # excluded code is reported in the sample flow.
+  level2:
+    wheat:                [B11, B12]
+    other_cereals:        [B13, B14, B15, B18, B19]
+    maize_and_root_crops: [B16, B21, B22, B23]
+    oilseeds_and_pulses:  [B31, B32, B33, B41]
+    fodder_and_temporary_grassland: [B51, B52, B53, B54, B55]
+    olive_groves:         [B81]
+    vineyards_and_orchards: [B71, B72, B73, B74, B75, B76, B77, B82]
+    permanent_grassland:  [E10, E20]
+  # Level 1 farming systems, built from the Level 2 groups.
+  level1:
+    arable: [wheat, other_cereals, maize_and_root_crops, oilseeds_and_pulses,
+             fodder_and_temporary_grassland]
+    permanent_crops: [olive_groves, vineyards_and_orchards]
+    grassland: [permanent_grassland]
+  # Input intensity, fixed a priori for H3 (reference group: permanent_grassland).
+  input_intensity:
+    high: [maize_and_root_crops]
+    medium: [wheat, other_cereals, oilseeds_and_pulses, vineyards_and_orchards]
+    low: [fodder_and_temporary_grassland, olive_groves, permanent_grassland]
+
+# ---------------------------------------------------------------------------
+# Predictor blocks (protocol: Feature engineering and predictor blocks)
+# ---------------------------------------------------------------------------
+blocks:
+  G: [easting, northing, elevation_m, slope_deg]
+  C: [bio1, bio4, bio6, bio12, bio15, bio17]
+  S_inh: [ph_cacl2, caco3_log1p, caco3_present, clay, silt]
+  S_nut: [n_log, p_log, k_log, p_below_lod]
+  K: [country]
+  organic_carbon: [oc_log]   # assigned to S_inh or S_nut by sensitivity run
+
+# ---------------------------------------------------------------------------
+# Precision check (protocol: Inferential statistics, "Precision check")
+# ---------------------------------------------------------------------------
+precision:
+  sesoi_macro_f1: 0.02
+  max_ci_width: 0.04
+  block_sizes_km: [50, 100]
+  n_bootstrap: 1000
+  n_replicates: 20

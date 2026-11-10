@@ -1,0 +1,9 @@
+farming_system,crop_group,n_points
+arable,fodder_and_temporary_grassland,708
+arable,maize_and_root_crops,1094
+arable,oilseeds_and_pulses,973
+arable,other_cereals,1551
+arable,wheat,1768
+grassland,permanent_grassland,2802
+permanent_crops,olive_groves,443
+permanent_crops,vineyards_and_orchards,567

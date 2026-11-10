@@ -1,0 +1,5 @@
+item,n_points
+coordinates from GPS,9887
+observed in situ within 100 m,9904
+label pure (lc1_perc >= 50%),7564
+texture measured,9056

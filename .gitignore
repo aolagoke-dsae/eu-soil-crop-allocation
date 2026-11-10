@@ -1,0 +1,26 @@
+# Data: never committed. LUCAS soil data may not be passed to third parties
+# (ESDAC licence); everything else is rebuilt by the pipeline. Only
+# data/README.md is tracked.
+data/*
+!data/README.md
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Python and tool caches
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+
+# Editors and OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini

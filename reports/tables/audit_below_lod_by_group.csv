@@ -1,0 +1,9 @@
+crop_group,ec_ms_m_below_lod,oc_g_kg_below_lod,p_mg_kg_below_lod,n_g_kg_below_lod,k_mg_kg_below_lod,p_below_lod
+fodder_and_temporary_grassland,0.0,0.0,19.8,0.0,0.0,19.8
+maize_and_root_crops,0.0,0.0,10.4,0.1,0.0,10.4
+oilseeds_and_pulses,0.0,0.2,17.1,0.0,0.0,17.1
+olive_groves,0.0,0.7,40.0,0.0,0.0,40.0
+other_cereals,0.0,0.1,12.8,0.1,0.1,12.8
+permanent_grassland,0.0,0.0,23.9,0.0,0.1,23.9
+vineyards_and_orchards,0.0,0.7,24.0,0.0,0.0,24.0
+wheat,0.0,0.1,12.6,0.0,0.0,12.6

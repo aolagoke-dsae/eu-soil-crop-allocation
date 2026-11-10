@@ -1,0 +1,8 @@
+step,reason,n_in,n_removed,n_out
+soil samples,"LUCAS 2018 topsoil table, one row per point",18984,0,18984
+standard depth,keep 0-20 cm samples only,18984,240,18744
+excluded countries,too few points to model: MT,18744,2,18742
+detection limits,values below their LOD censored and flagged; CaCO3 codes decoded as 0,18742,0,18742
+agricultural land cover,cropland (B) or grassland (E) recorded at the point,18742,7453,11289
+agricultural land use,"land use U111: agriculture, excluding fallow and kitchen gardens",11289,1005,10284
+crop group,land-cover code belongs to a configured crop group,10284,378,9906

@@ -1,0 +1,57 @@
+# eu-soil-crop-allocation: Python dependencies
+# Target: Python 3.14 (the project .venv). Requires Python >= 3.12.
+# Versions pinned for reproducibility (latest releases as of 2026-11-10).
+#
+# Install into the activated project environment:
+#   uv pip install -r requirements.txt        (the .venv was created with uv)
+#   or: python -m pip install -r requirements.txt
+
+# --- Core data handling -------------------------------------------------
+numpy==2.5.4
+pandas==3.1.1
+scipy==1.18.1
+pyarrow==26.0.1          # Parquet files for interim/processed data
+pyyaml==6.0.3            # config/analysis.yaml
+xlrd==2.0.2              # read legacy .xls (LUCAS soil, harmonised code lists)
+openpyxl==3.1.5          # read .xlsx supporting files
+
+# --- Geospatial ---------------------------------------------------------
+geopandas==1.2.0         # point and polygon tables, spatial joins
+shapely==2.2.0
+pyproj==3.8.0            # reprojection to EPSG:3035
+pyogrio==0.13.0          # fast shapefile I/O for geopandas
+rasterio==1.5.2          # WorldClim and DEM extraction at points
+
+# --- Cloud data access (TerraClimate on the Planetary Computer) ---------
+pystac-client==0.9.1
+planetary-computer==1.0.0
+xarray==2026.9.0
+zarr==3.4.2
+fsspec==2026.9.0
+adlfs==2026.8.0          # Azure Blob access for the Zarr store
+
+# --- Spatial statistics -------------------------------------------------
+libpysal==4.15.1         # spatial weights
+esda==2.10.0             # Moran's I for predictors, classes and residuals
+gstools==1.7.0           # empirical variograms (block-size choice); scikit-gstat caps scipy<1.17
+
+# --- Statistical modelling ----------------------------------------------
+statsmodels==0.15.0      # H3 regressions, mixed models, Tobit via custom likelihood
+patsy==1.0.3             # spline and tensor-product terms in formulas
+
+# --- Machine learning ---------------------------------------------------
+scikit-learn==1.9.1      # pipelines, spatial CV splitters, baselines, metrics
+lightgbm==4.7.0          # gradient boosting
+optuna==5.0.0            # hyperparameter tuning with equal budgets
+shap==0.54.1             # TreeSHAP (exploratory interpretation)
+
+# --- Visualisation and notebooks ----------------------------------------
+matplotlib==3.11.2
+seaborn==0.13.2
+plotly==7.1.0
+jinja2==3.1.6            # pandas Styler tables
+ipykernel==7.4.0         # Jupyter / VS Code kernel
+tqdm==4.70.1             # progress bars for long runs
+
+# --- Testing ------------------------------------------------------------
+pytest==9.2.0

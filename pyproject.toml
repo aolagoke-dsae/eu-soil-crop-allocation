@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "eusoil"
+version = "0.1.0"
+description = "Soil, climate and crop allocation in European agriculture (LUCAS 2018)"
+authors = [{ name = "Adewole Olagoke" }]
+requires-python = ">=3.12"
+license = "MIT"
+readme = "README.md"
+# Exact versions are pinned in requirements.txt; install that first.
+dependencies = []
+
+[project.scripts]
+eusoil = "eusoil.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+markers = [
+    "network: needs internet access to an external data service",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
