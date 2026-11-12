@@ -8,7 +8,7 @@ Evidence from about 10,000 agricultural points of the EU's LUCAS 2018 topsoil
 survey, with laboratory-measured N, P, K and pH, the crop recorded in the field,
 and climate and terrain at each point.
 
-> **Status: Phase 1 (data ingestion and audit) in progress.** The analysis
+> **Status: In progress.** The analysis
 > protocol, with its hypotheses and decision rules fixed before modelling, is in
 > [`docs/PROTOCOL.md`](docs/PROTOCOL.md). Results will appear here once the
 > sealed test blocks have been scored.
