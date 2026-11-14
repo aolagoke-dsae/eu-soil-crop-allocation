@@ -1,0 +1,7 @@
+split,distribution,n,q05_km,q25_km,q50_km,q75_km,q95_km
+outer_s1,prediction_to_sample,108128,2.83,6.01,10.0,16.12,32.8
+outer_s1,cv_heldout_to_train,7925,2.83,6.32,10.0,14.42,25.46
+outer_s2,prediction_to_sample,108128,2.83,6.01,10.0,16.12,32.8
+outer_s2,cv_heldout_to_train,7925,2.83,6.32,10.0,14.42,25.46
+outer_s3,prediction_to_sample,108128,2.83,6.01,10.0,16.12,32.8
+outer_s3,cv_heldout_to_train,7925,2.83,6.32,10.0,14.42,25.61
