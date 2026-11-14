@@ -11,7 +11,7 @@ and climate and terrain at each point.
 > **Status: In progress.** The analysis
 > protocol, with its hypotheses and decision rules fixed before modelling, is in
 > [`docs/PROTOCOL.md`](docs/PROTOCOL.md). Results will appear here once the
-> sealed test blocks have been scored.
+> sealed test set has been scored.
 
 ## Reproducing the pipeline
 
@@ -36,6 +36,18 @@ python -m eusoil worldclim                         # optional internal check (lo
 python -m eusoil table                             # the modelling table
 python -m eusoil precision                         # the H1 precision check
 ```
+
+Phase 2 fixes the split before any exploration, in this order:
+
+```bash
+python -m eusoil domain       # prediction domain: unsampled 2018 farmland points
+python -m eusoil seal         # kNNDM split; seals the test set (refuses to re-seal)
+python -m eusoil variogram    # indicator variograms on training points; bootstrap block size
+python -m eusoil folds        # kNNDM outer folds on the training points, three seeds
+```
+
+The SHA-256 hash of the sealed test set's point IDs is in
+`reports/tables/split_seal.csv`; the commit that adds it fixes the test set.
 
 ## Related project
 

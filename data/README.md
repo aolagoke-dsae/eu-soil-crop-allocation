@@ -10,8 +10,8 @@ source and where to put it.
 ```
 data/
 ├── raw/         sources as downloaded; never edited
-├── interim/     tables written by `python -m eusoil points | dem | terraclimate | worldclim`
-└── processed/   the modelling table written by `python -m eusoil table`
+├── interim/     tables written by `python -m eusoil points | dem | terraclimate | worldclim | domain`
+└── processed/   the modelling table (`table`) and the split assignments (`seal`, `folds`)
 ```
 
 ## Sources

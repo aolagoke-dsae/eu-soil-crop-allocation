@@ -2,7 +2,7 @@
 #
 # Every choice that the analysis protocol (docs/PROTOCOL.md) fixes in advance
 # lives here, so that code never hard-codes a threshold. Changing a value in
-# this file after the sealed test blocks are opened is a protocol amendment
+# this file after the sealed test set is opened is a protocol amendment
 # and must be recorded as one.
 
 seed: 20261110
@@ -111,6 +111,24 @@ climate_sensitivity:
   period_2015_2018: tc1518_bio
   worldclim_30s: wc30s_bio
   worldclim_2_5m: wc25m_bio
+
+# ---------------------------------------------------------------------------
+# Splits (protocol: Validation design; amendments A10, A11)
+# ---------------------------------------------------------------------------
+split:
+  k_seal: 5                 # the sealed test set is one of five kNNDM folds (~20%)
+  max_seal_attempts: 10     # later seeds, if no fold holds every crop group
+  k_outer: 5
+  outer_repeats: 3
+  k_inner: 4                # used in Phase 3 (tuning)
+  n_candidates: 100         # cluster counts tried by kNNDM, log-spaced from k to n
+  max_fold_share: 0.5       # no fold may hold more than half the points (CAST maxp)
+
+variogram:
+  max_lag_km: 300
+  bin_width_km: 10
+  block_step_km: 25         # bootstrap block = smallest multiple of 25 km >= median range,
+  block_cap_km: 200         # capped at 200 km
 
 # ---------------------------------------------------------------------------
 # Precision check (protocol: Inferential statistics, "Precision check")

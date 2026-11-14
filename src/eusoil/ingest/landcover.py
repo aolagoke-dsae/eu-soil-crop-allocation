@@ -93,3 +93,25 @@ def choose_coordinates(df: pd.DataFrame) -> pd.DataFrame:
     out["lon"] = np.where(use_gps, out["gps_lon"], out["th_lon"])
     out["coord_source"] = np.where(use_gps, "gps", "theoretical")
     return out
+
+
+SURVEY_LOCATION_COLUMNS = ["point_id", "nuts0", "th_lat", "th_long", "lc1", "lu1"]
+
+
+def read_survey_locations(path: Path) -> pd.DataFrame:
+    """Every 2018 survey point with its country, planned position and cover/use codes.
+
+    Used for the prediction domain. ``th_long`` is already signed in the
+    harmonised table (unlike ``gps_long``).
+    """
+    df = pd.read_csv(
+        path,
+        usecols=SURVEY_LOCATION_COLUMNS,
+        dtype=str,
+        keep_default_na=False,
+        na_values=["", "NA"],
+    )
+    df["point_id"] = df["point_id"].astype("int64")
+    if not df["point_id"].is_unique:
+        raise ValueError("point_id is not unique in the harmonised 2018 table")
+    return df

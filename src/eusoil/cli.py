@@ -13,7 +13,15 @@ Commands, in the order they are normally run:
 ``table``         join everything into ``data/processed/modelling_table.parquet``
 ``precision``     the H1 precision check (simulation on labels and coordinates)
 
-Each command reads the outputs of the earlier ones from ``data/interim``.
+Phase 2, in this order:
+
+``domain``        the prediction domain: unsampled 2018 farmland points
+``seal``          kNNDM split of the sample; seals the test set (refuses to re-seal)
+``variogram``     indicator variograms on the training points; bootstrap block size
+``folds``         kNNDM outer folds on the training points (3 seeds)
+
+Each command reads the outputs of the earlier ones from ``data/interim`` and
+``data/processed``.
 """
 
 from __future__ import annotations
@@ -23,6 +31,7 @@ import logging
 import sys
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from eusoil.build import (
@@ -164,6 +173,187 @@ def cmd_precision(args, config, paths) -> None:
     LOG.info("precision check written to %s\n%s", out, result.to_string(index=False))
 
 
+# ---------------------------------------------------------------------------
+# Phase 2
+# ---------------------------------------------------------------------------
+
+
+def _projected_points(paths, config) -> pd.DataFrame:
+    points = add_projected_coordinates(_points(paths), config["crs"])
+    points["country"] = points["nuts0"]
+    return points.reset_index(drop=True)
+
+
+def _domain_xy(paths) -> np.ndarray:
+    path = paths.interim / "domain.parquet"
+    if not path.exists():
+        sys.exit(f"{path} not found: run 'python -m eusoil domain' first")
+    return pd.read_parquet(path, columns=["easting", "northing"]).to_numpy()
+
+
+def _splits_path(paths) -> Path:
+    return paths.processed / "splits.parquet"
+
+
+def cmd_domain(args, config, paths) -> None:
+    from eusoil.ingest.landcover import read_survey_locations
+    from eusoil.split import build_domain
+
+    survey = read_survey_locations(paths.landcover_2018)
+    domain = build_domain(survey, _points(paths)["point_id"], config)
+    domain = add_projected_coordinates(domain, config["crs"])
+    domain.to_parquet(paths.interim / "domain.parquet", index=False)
+    by_country = domain.groupby("nuts0").size().rename("n_domain_points")
+    by_country.to_csv(paths.reports / "tables" / "domain_by_country.csv")
+    LOG.info("domain: %d unsampled farmland points in %d countries", len(domain), len(by_country))
+
+
+def cmd_seal(args, config, paths) -> None:
+    from eusoil.figures import knndm_ecdf
+    from eusoil.knndm import distance_summary
+    from eusoil.split import fold_counts, seal_test_set
+
+    out = _splits_path(paths)
+    if out.exists() and not args.force:
+        sys.exit(
+            f"{out} exists: the test set is already sealed. Re-sealing after any "
+            "exploration breaks the protocol; pass --force only before EDA has started."
+        )
+    points = _projected_points(paths, config)
+    splits, result, record = seal_test_set(
+        points, _domain_xy(paths), config["split"], seed=config["seed"]
+    )
+    splits.to_parquet(out, index=False)
+
+    tables = paths.reports / "tables"
+    pd.DataFrame([record]).to_csv(tables / "split_seal.csv", index=False)
+    frame = points.merge(splits, on="point_id")
+    frame["set"] = np.where(frame["sealed_test"], "test", "train")
+    fold_counts(frame, "set", "crop_group").to_csv(tables / "split_seal_by_crop_group.csv")
+    fold_counts(frame, "set", "country").to_csv(tables / "split_seal_by_country.csv")
+    distance_summary(result, "seal").to_csv(tables / "knndm_distances_seal.csv", index=False)
+    result.candidates.to_csv(tables / "knndm_candidates_seal.csv", index=False)
+    knndm_ecdf(
+        result,
+        "Sealed test split: kNNDM vs random CV",
+        paths.reports / "figures" / "knndm_seal.png",
+    )
+    LOG.info(
+        "sealed: %d of %d points (%.1f%%), q = %d clusters, W = %.2f km (random CV %.2f km); "
+        "countries without test points: %s; SHA-256 %s",
+        record["n_test"],
+        record["n_points"],
+        100 * record["test_share"],
+        record["q"],
+        record["w"] / 1000,
+        record["w_random_cv"] / 1000,
+        record["countries_without_test_points"] or "none",
+        record["sha256_test_ids"],
+    )
+
+
+def _training_points(paths, config) -> pd.DataFrame:
+    path = _splits_path(paths)
+    if not path.exists():
+        sys.exit(f"{path} not found: run 'python -m eusoil seal' first")
+    splits = pd.read_parquet(path)
+    points = _projected_points(paths, config).merge(splits, on="point_id", validate="one_to_one")
+    return points[~points["sealed_test"]].reset_index(drop=True)
+
+
+def cmd_variogram(args, config, paths) -> None:
+    from eusoil.figures import variogram_panels
+    from eusoil.variogram import bootstrap_block_km, class_variograms
+
+    settings = config["variogram"]
+    train = _training_points(paths, config)
+    empirical, fits = class_variograms(
+        train[["easting", "northing"]].to_numpy(),
+        train["crop_group"],
+        max_lag=settings["max_lag_km"] * 1000.0,
+        bin_width=settings["bin_width_km"] * 1000.0,
+    )
+    median_km = float(fits["range"].median()) / 1000
+    ok = fits["fit_flag"].eq("ok")
+    median_ok_km = float(fits.loc[ok, "range"].median()) / 1000 if ok.any() else float("nan")
+    block = bootstrap_block_km(median_km, settings["block_step_km"], settings["block_cap_km"])
+    tables = paths.reports / "tables"
+    empirical.to_csv(tables / "variogram_empirical.csv", index=False)
+    fits.assign(range_km=fits["range"] / 1000).to_csv(tables / "variogram_fits.csv", index=False)
+    pd.DataFrame(
+        [
+            {
+                "median_range_km": round(median_km, 1),
+                "bootstrap_block_km": block,
+                "median_range_ok_fits_km": round(median_ok_km, 1),
+                "n_classes_flagged": int((~ok).sum()),
+                "n_train": len(train),
+            }
+        ]
+    ).to_csv(tables / "bootstrap_block.csv", index=False)
+    variogram_panels(empirical, fits, block, paths.reports / "figures" / "variograms.png")
+    LOG.info(
+        "variograms: median range %.1f km -> bootstrap block %.0f km "
+        "(median of the %d unflagged fits: %.1f km; flags: %s)",
+        median_km,
+        block,
+        int(ok.sum()),
+        median_ok_km,
+        ", ".join(
+            f"{g} {f}"
+            for g, f in zip(fits["crop_group"], fits["fit_flag"], strict=True)
+            if f != "ok"
+        )
+        or "none",
+    )
+
+
+def cmd_folds(args, config, paths) -> None:
+    from eusoil.figures import knndm_ecdf
+    from eusoil.knndm import distance_summary
+    from eusoil.split import fold_counts, outer_folds
+
+    path = _splits_path(paths)
+    if not path.exists():
+        sys.exit(f"{path} not found: run 'python -m eusoil seal' first")
+    splits = pd.read_parquet(path)
+    points = _projected_points(paths, config)
+    splits = splits[[c for c in splits.columns if not c.startswith("outer_fold_")]]
+    splits, results = outer_folds(
+        points, splits, _domain_xy(paths), config["split"], config["seed"]
+    )
+    splits.to_parquet(path, index=False)
+
+    tables = paths.reports / "tables"
+    frame = points.merge(splits, on="point_id")
+    frame = frame[~frame["sealed_test"]]
+    summaries, records = [], []
+    for repeat, result in enumerate(results, start=1):
+        column = f"outer_fold_s{repeat}"
+        fold_counts(frame, column, "crop_group").to_csv(
+            tables / f"folds_s{repeat}_by_crop_group.csv"
+        )
+        summaries.append(distance_summary(result, f"outer_s{repeat}"))
+        records.append(
+            {"repeat": repeat, "q": result.q, "w": result.w, "w_random_cv": result.w_random}
+        )
+    pd.concat(summaries).to_csv(tables / "knndm_distances_outer.csv", index=False)
+    pd.DataFrame(records).to_csv(tables / "knndm_outer.csv", index=False)
+    knndm_ecdf(
+        results[0],
+        "Outer folds (seed 1): kNNDM vs random CV",
+        paths.reports / "figures" / "knndm_outer.png",
+    )
+    for record in records:
+        LOG.info(
+            "outer folds s%d: q = %d, W = %.2f km (random CV %.2f km)",
+            record["repeat"],
+            record["q"],
+            record["w"] / 1000,
+            record["w_random_cv"] / 1000,
+        )
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         prog="eusoil", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -179,6 +369,11 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--period", choices=["1991-2020", "2015-2018"], default="1991-2020")
     sub.add_parser("table", help="build the modelling table")
     sub.add_parser("precision", help="H1 precision check")
+    sub.add_parser("domain", help="prediction domain: unsampled 2018 farmland points")
+    p = sub.add_parser("seal", help="kNNDM split; seal the test set")
+    p.add_argument("--force", action="store_true", help="re-seal (only before any EDA)")
+    sub.add_parser("variogram", help="indicator variograms; bootstrap block size")
+    sub.add_parser("folds", help="kNNDM outer folds on the training points")
     args = parser.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -192,6 +387,10 @@ def main(argv: list[str] | None = None) -> None:
         "terraclimate": cmd_terraclimate,
         "table": cmd_table,
         "precision": cmd_precision,
+        "domain": cmd_domain,
+        "seal": cmd_seal,
+        "variogram": cmd_variogram,
+        "folds": cmd_folds,
     }
     commands[args.command](args, config, paths)
 

@@ -33,7 +33,6 @@ adlfs==2026.8.0          # Azure Blob access for the Zarr store
 # --- Spatial statistics -------------------------------------------------
 libpysal==4.15.1         # spatial weights
 esda==2.10.0             # Moran's I for predictors, classes and residuals
-gstools==1.7.0           # empirical variograms (block-size choice); scikit-gstat caps scipy<1.17
 
 # --- Statistical modelling ----------------------------------------------
 statsmodels==0.15.0      # H3 regressions, mixed models, Tobit via custom likelihood
