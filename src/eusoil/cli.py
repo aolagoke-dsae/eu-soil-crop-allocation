@@ -21,6 +21,11 @@ Phase 2, in this order:
 ``folds``         kNNDM outer folds on the training points (3 seeds)
 ``eda``           exploratory analysis on the training points (never the sealed test set)
 
+Phase 3:
+
+``stage-a``         tune and score every candidate on the outer kNNDM folds (resumable)
+``stage-a-report``  summary, the one-SE selection, calibration check
+
 Each command reads the outputs of the earlier ones from ``data/interim`` and
 ``data/processed``.
 """
@@ -28,6 +33,7 @@ Each command reads the outputs of the earlier ones from ``data/interim`` and
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import sys
 from pathlib import Path
@@ -436,6 +442,179 @@ def _country_outline(paths):
         return None
 
 
+def _stage_a_data(paths, config):
+    """Training points with outer folds, complete cases on the Stage A predictors."""
+    from eusoil.eda import assert_no_test_rows
+    from eusoil.models import complete_cases, predictor_columns
+
+    table_path = paths.processed / "modelling_table.parquet"
+    splits_path = _splits_path(paths)
+    for path, command in ((table_path, "table"), (splits_path, "seal' and 'folds")):
+        if not path.exists():
+            sys.exit(f"{path} not found: run 'python -m eusoil {command}' first")
+    splits = pd.read_parquet(splits_path)
+    if "outer_fold_s1" not in splits.columns:
+        sys.exit("No outer folds yet: run 'python -m eusoil folds' first")
+    table = pd.read_parquet(table_path).merge(splits, on="point_id", validate="one_to_one")
+    train = table[~table["sealed_test"]].reset_index(drop=True)
+    assert_no_test_rows(train, splits)
+    columns = predictor_columns(config, config["stage_a"]["blocks"])
+    data, dropped = complete_cases(train, columns)
+    classes = sorted(config["target"]["level2"])
+    return data, dropped, columns, classes
+
+
+def _stage_a_dir(paths) -> Path:
+    return paths.interim / "stage_a"
+
+
+def cmd_stage_a(args, config, paths) -> None:
+    from eusoil.models import TUNED, UNTUNED, run_stage_a
+
+    data, dropped, columns, classes = _stage_a_data(paths, config)
+    models = args.models or list(UNTUNED + TUNED)
+    repeats = args.repeats or list(range(1, config["split"]["outer_repeats"] + 1))
+    LOG.info(
+        "stage A: %d training points (%d dropped for missing predictors), %d predictors, "
+        "models %s, repeats %s",
+        len(data),
+        dropped,
+        len(columns),
+        ", ".join(models),
+        repeats,
+    )
+    run_stage_a(
+        data,
+        columns,
+        classes,
+        _domain_xy(paths),
+        config,
+        models,
+        repeats,
+        _stage_a_dir(paths),
+        n_jobs=args.n_jobs,
+    )
+
+
+def cmd_stage_a_report(args, config, paths) -> None:
+    from eusoil import figures
+    from eusoil.models import (
+        FoldTask,
+        apply_temperature,
+        classwise_ece,
+        load_records,
+        reliability_table,
+        select_model,
+        summarise,
+        temperature_for_fold,
+        top_label_ece,
+    )
+
+    settings = config["stage_a"]
+    data, dropped, columns, classes = _stage_a_data(paths, config)
+    checkpoint = _stage_a_dir(paths)
+    records = load_records(checkpoint)
+    expected = config["split"]["k_outer"] * config["split"]["outer_repeats"]
+    incomplete = records.groupby("model").size().loc[lambda s: s < expected]
+    if not incomplete.empty:
+        sys.exit(f"Stage A is incomplete: {incomplete.to_dict()} of {expected} folds")
+
+    tables, figs = paths.reports / "tables", paths.reports / "figures"
+    metrics = ["macro_f1", "balanced_accuracy", "log_loss", "brier", "top2_accuracy"]
+    per_class = [c for c in records.columns if c.startswith("f1__")]
+    records.drop(columns=per_class).to_csv(tables / "stage_a_folds.csv", index=False)
+    summary = summarise(records, metrics + per_class)
+    summary[
+        ["model", "n_folds"]
+        + [
+            c
+            for c in summary.columns
+            if c.split("_")[-1] in {"mean", "se", "lo", "hi"} and not c.startswith("f1__")
+        ]
+    ].to_csv(tables / "stage_a_summary.csv", index=False)
+    (
+        summary.set_index("model")[[f"{c}_mean" for c in per_class]]
+        .rename(columns=lambda c: c.removeprefix("f1__").removesuffix("_mean"))
+        .to_csv(tables / "stage_a_per_class_f1.csv")
+    )
+    selection = select_model(summary, settings["selection_order"])
+    selected = selection["selected"]
+    figures.stage_a_scores(summary, selected, figs / "stage_a_scores.png")
+
+    # Calibration of the selected model, on its pooled outer-fold predictions.
+    predictions = pd.concat(
+        pd.read_parquet(p) for p in sorted(checkpoint.glob(f"{selected}_s*_f*.parquet"))
+    )
+    proba = predictions[[f"p__{c}" for c in classes]].to_numpy()
+    y = predictions["y_true"].to_numpy()
+    ece_before = top_label_ece(y, proba, classes, settings["ece_bins"])
+    calibration = {"model": selected, "top_label_ece": ece_before}
+    calibration |= {
+        f"ece__{k}": v for k, v in classwise_ece(y, proba, classes, settings["ece_bins"]).items()
+    }
+    reliability_table(y, proba, classes, settings["ece_bins"]).to_csv(
+        tables / "stage_a_reliability.csv", index=False
+    )
+    figures.reliability_panels(
+        reliability_table(y, proba, classes, settings["ece_bins"]),
+        f"Reliability of {selected.replace('_', ' ')}, outer folds, all repeats",
+        figs / "stage_a_reliability.png",
+    )
+    worst_class_ece = max(v for k, v in calibration.items() if k.startswith("ece__"))
+    calibration["worst_class_ece"] = worst_class_ece
+    if max(ece_before, worst_class_ece) > settings["ece_threshold"]:
+        LOG.info(
+            "stage A: ECE (top-label %.3f, worst class %.3f) above %.3f; temperature scaling",
+            ece_before,
+            worst_class_ece,
+            settings["ece_threshold"],
+        )
+        scaled_parts = []
+        folds = records[records["model"] == selected]
+        temperatures = []
+        for row in folds.itertuples(index=False):
+            task = FoldTask(selected, int(row.repeat), int(row.fold))
+            t = temperature_for_fold(
+                task, json.loads(row.best_params), data, columns, classes, _domain_xy(paths), config
+            )
+            temperatures.append(t)
+            part = predictions[
+                (predictions["repeat"] == task.repeat) & (predictions["fold"] == task.fold)
+            ]
+            scaled = apply_temperature(part[[f"p__{c}" for c in classes]].to_numpy(), t)
+            scaled_parts.append((part["y_true"].to_numpy(), scaled))
+        y_s = np.concatenate([a for a, _ in scaled_parts])
+        p_s = np.concatenate([b for _, b in scaled_parts])
+        calibration |= {
+            "temperature_median": float(np.median(temperatures)),
+            "top_label_ece_after": top_label_ece(y_s, p_s, classes, settings["ece_bins"]),
+            "worst_class_ece_after": max(
+                classwise_ece(y_s, p_s, classes, settings["ece_bins"]).values()
+            ),
+        }
+        figures.reliability_panels(
+            reliability_table(y_s, p_s, classes, settings["ece_bins"]),
+            f"Reliability of {selected.replace('_', ' ')} after temperature scaling",
+            figs / "stage_a_reliability_scaled.png",
+        )
+    pd.DataFrame([calibration]).to_csv(tables / "stage_a_calibration.csv", index=False)
+    pd.DataFrame(
+        [
+            selection
+            | {"n_points": len(data), "n_dropped_missing": dropped, "predictors": ";".join(columns)}
+        ]
+    ).to_csv(tables / "stage_a_selection.csv", index=False)
+    LOG.info(
+        "stage A: best by mean %s (macro F1 %.3f, SE %.3f); selected %s (%.3f); top-label ECE %.3f",
+        selection["best_by_mean"],
+        selection["best_mean_macro_f1"],
+        selection["best_se"],
+        selected,
+        selection["selected_mean_macro_f1"],
+        ece_before,
+    )
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         prog="eusoil", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -457,6 +636,11 @@ def main(argv: list[str] | None = None) -> None:
     sub.add_parser("variogram", help="indicator variograms; bootstrap block size")
     sub.add_parser("folds", help="kNNDM outer folds on the training points")
     sub.add_parser("eda", help="exploratory analysis on the training points")
+    p = sub.add_parser("stage-a", help="Stage A: tune and score the candidate models")
+    p.add_argument("--models", nargs="+", help="subset of models (default: all)")
+    p.add_argument("--repeats", nargs="+", type=int, help="subset of repeats (default: all)")
+    p.add_argument("--n-jobs", type=int, default=-1, help="parallel jobs for the search")
+    sub.add_parser("stage-a-report", help="Stage A: summary, selection, calibration")
     args = parser.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -475,6 +659,8 @@ def main(argv: list[str] | None = None) -> None:
         "variogram": cmd_variogram,
         "folds": cmd_folds,
         "eda": cmd_eda,
+        "stage-a": cmd_stage_a,
+        "stage-a-report": cmd_stage_a_report,
     }
     commands[args.command](args, config, paths)
 

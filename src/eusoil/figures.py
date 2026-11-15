@@ -277,3 +277,53 @@ def _map_frame(ax, df: pd.DataFrame) -> None:
     ax.set_ylabel("")
     for spine in ax.spines.values():
         spine.set_visible(False)
+
+
+def reliability_panels(table: pd.DataFrame, title: str, path: Path) -> None:
+    """Reliability diagram per crop group: observed frequency against predicted probability."""
+    groups = sorted(table["crop_group"].unique())
+    fig, axes = plt.subplots(2, 4, figsize=(12, 6), dpi=150)
+    for ax, group, colour in zip(axes.flat, groups, GROUP_COLOURS, strict=False):
+        data = table[(table["crop_group"] == group) & (table["n"] >= 10)]
+        ax.plot([0, 1], [0, 1], color="#adb5bd", linewidth=1)
+        ax.plot(data["mean_predicted"], data["observed"], "o-", color=colour, ms=3, linewidth=1.2)
+        ax.set_xlim(0, 1)
+        ax.set_ylim(0, 1)
+        ax.set_title(_label(group), fontsize=8, loc="left")
+        ax.tick_params(labelsize=7)
+        ax.spines[["top", "right"]].set_visible(False)
+    fig.supxlabel("Mean predicted probability (bins with at least 10 points)", fontsize=9)
+    fig.supylabel("Observed frequency", fontsize=9)
+    fig.suptitle(title, x=0.01, ha="left", fontsize=11)
+    fig.tight_layout()
+    fig.savefig(path)
+    plt.close(fig)
+
+
+def stage_a_scores(summary: pd.DataFrame, selected: str, path: Path) -> None:
+    """Mean outer-fold macro F1 with 95% intervals per candidate, selected model highlighted."""
+    data = summary.sort_values("macro_f1_mean")
+    y = np.arange(len(data))
+    fig, ax = plt.subplots(figsize=(7, 0.45 * len(data) + 1.3), dpi=150)
+    colours = [CHOSEN if m == selected else TARGET for m in data["model"]]
+    ax.errorbar(
+        data["macro_f1_mean"],
+        y,
+        xerr=[
+            data["macro_f1_mean"] - data["macro_f1_lo"],
+            data["macro_f1_hi"] - data["macro_f1_mean"],
+        ],
+        fmt="none",
+        ecolor=INK,
+        elinewidth=1,
+        capsize=3,
+    )
+    ax.scatter(data["macro_f1_mean"], y, color=colours, zorder=3, s=30)
+    ax.set_yticks(y)
+    ax.set_yticklabels([_label(m) for m in data["model"]], fontsize=8)
+    ax.set_xlabel("Macro F1, mean over outer kNNDM folds and repeats (95% interval)")
+    ax.spines[["top", "right"]].set_visible(False)
+    ax.set_title(f"Stage A: selected model {_label(selected)}", loc="left", fontsize=11)
+    fig.tight_layout()
+    fig.savefig(path)
+    plt.close(fig)

@@ -1,6 +1,6 @@
 # LUCAS Crop Allocation: Analysis Protocol
 
-Dr. Adewole Olagoke · 10 November 2026, amended 15 November 2026 · revision 95
+Dr. Adewole Olagoke · 10 November 2026, amended 15 November 2026 · revision 98
 
 ## Purpose and scope
 
@@ -39,6 +39,7 @@ The data were screened before this protocol was committed. Everything below was 
 | A13 | Hypotheses renumbered H1, H2, H3a, H3b (the former H5a, H5b). Holm covers these four tests. Each is decided as supported, negligible or inconclusive against the 0.02 SESOI from 98.75% intervals; H2 now has the threshold too | The former count of five tests was wrong (seven with P and K, H5a and H5b); H2 had no threshold | Hypotheses; inference |
 | A14 | ERA5-Land in the risks table replaced by TerraClimate; texture source in the data-ingestion table aligned with A4 | Left over from earlier drafts | Data ingestion; risks |
 | A15 | (15 November 2026, while writing the EDA code) Soil variables are mapped as medians per 50 km cell, shown only for cells with at least 5 training points, instead of as point maps; crop groups stay point maps. EDA settings fixed in config/analysis.yaml: Moran's I with row-standardised 8-nearest-neighbour weights and 199 permutations; coverage hulls on the first 3 principal components | A point map of a soil variable would publish point-level LUCAS soil values, which the ESDAC licence forbids; the protocol named no settings for these statistics | Exploratory data analysis |
+| A16 | (15 November 2026, before the Stage A run) Stage A settings fixed in config/analysis.yaml: full predictor set G + C + S-inh + S-nut + K (organic carbon only in its sensitivity runs); complete cases (7,252 training points, 673 dropped); 60 randomised-search trials per tuned model; boosting = scikit-learn HistGradientBoosting; the logistic spline basis is cubic with 3 knots and linear extrapolation beyond the boundary knots; calibration counts as poor when the top-label or any class-wise ECE exceeds 0.05. A 4-trial timing run on repeat 1 preceded the choice of budget and of the class-wise criterion; the selection rule and search spaces were not changed after it | The protocol named these only by example; the timing run showed that inverse-frequency class weights mis-calibrate individual classes even when the top-label ECE is low | Modelling and model selection |
 
 The resulting sample flow (18,984 points to 9,906) is in `reports/tables/sample_flow.csv`.
 
@@ -295,7 +296,7 @@ Model selection and hypothesis testing are kept apart. Stage A picks one algorit
 
 **Selection rule.** Choose the model with the best mean outer-CV macro F1, unless a simpler model's mean macro F1 is within one standard error of the best model's, in which case choose the simpler one (order of simplicity: logistic < random forest < boosting).
 
-**Calibration.** Reliability diagrams and expected calibration error per class. If calibration is poor, fit temperature scaling on inner folds and report before and after.
+**Calibration.** Reliability diagrams and expected calibration error per class. If calibration is poor (top-label or any class-wise ECE above 0.05; A16), fit temperature scaling on inner folds and report before and after.
 
 **Stage B, the nested-block ladder (H1, H2, H3a).** With the chosen algorithm, retuned within each fold for each block set:
 
@@ -444,8 +445,8 @@ Work proceeds in gated phases. A phase starts only when the one before it is tic
 
 **Phase 2: split and EDA (gate: kNNDM folds matched to the prediction domain, test set sealed)**
 
-- [ ] Compute variograms and set the bootstrap block size; build kNNDM folds against the prediction domain; assign and seal the test set
-- [ ] Run the EDA on training points; confirm the climate subset
+- [x] Compute variograms and set the bootstrap block size; build kNNDM folds against the prediction domain; assign and seal the test set
+- [x] Run the EDA on training points; confirm the climate subset
 
 **Phase 3: Stage A model selection (gate: one algorithm chosen by the pre-set rule)**
 

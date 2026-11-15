@@ -49,6 +49,14 @@ python -m eusoil folds        # kNNDM outer folds on the training points, three 
 The SHA-256 hash of the sealed test set's point IDs is in
 `reports/tables/split_seal.csv`; the commit that adds it fixes the test set.
 
+Phase 2 ends with the exploratory analysis on the training points
+(`python -m eusoil eda`). Phase 3 chooses the algorithm:
+
+```bash
+python -m eusoil stage-a          # tune and score every candidate on the outer folds (resumable)
+python -m eusoil stage-a-report   # summary, the one-SE selection, calibration check
+```
+
 ## Related project
 
 [Soil Carbon Kriging](https://github.com/aolagoke-dsae/soil-carbon-kriging) works
