@@ -1,0 +1,2 @@
+best_by_mean,best_mean_macro_f1,best_se,one_se_threshold,selected,selected_mean_macro_f1,rule,n_points,n_dropped_missing,predictors
+random_forest,0.4397629780866257,0.002294882220454318,0.43746809586617136,random_forest,0.4397629780866257,simplest model within one SE of the best mean outer-fold macro F1,7252,673,easting;northing;elevation_m;slope_deg;tc9120_bio1;tc9120_bio4;tc9120_bio6;tc9120_bio12;tc9120_bio15;tc9120_bio17;ph_cacl2;caco3_log1p;caco3_present;clay;silt;n_log;p_log;k_log;p_below_lod;country
