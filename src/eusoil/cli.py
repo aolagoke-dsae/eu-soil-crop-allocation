@@ -19,6 +19,7 @@ Phase 2, in this order:
 ``seal``          kNNDM split of the sample; seals the test set (refuses to re-seal)
 ``variogram``     indicator variograms on the training points; bootstrap block size
 ``folds``         kNNDM outer folds on the training points (3 seeds)
+``eda``           exploratory analysis on the training points (never the sealed test set)
 
 Each command reads the outputs of the earlier ones from ``data/interim`` and
 ``data/processed``.
@@ -354,6 +355,87 @@ def cmd_folds(args, config, paths) -> None:
         )
 
 
+def cmd_eda(args, config, paths) -> None:
+    from eusoil import eda, figures
+
+    settings = config["eda"]
+    table_path = paths.processed / "modelling_table.parquet"
+    if not table_path.exists():
+        sys.exit(f"{table_path} not found: run 'python -m eusoil table' first")
+    splits_path = _splits_path(paths)
+    if not splits_path.exists():
+        sys.exit(f"{splits_path} not found: run 'python -m eusoil seal' first")
+    splits = pd.read_parquet(splits_path)
+    train = eda.training_only(pd.read_parquet(table_path), splits)
+    columns = eda.continuous_predictors(config)
+    tables, figs = paths.reports / "tables", paths.reports / "figures"
+    LOG.info("eda: %d training points, %d continuous predictors", len(train), len(columns))
+
+    eda.class_summaries(train, columns).to_csv(tables / "eda_class_summaries.csv", index=False)
+    figures.histograms(train, columns, figs / "eda_histograms.png")
+    figures.class_violins(train, columns, figs / "eda_violins.png")
+
+    matrices, pairs = eda.correlation_structure(train, columns, settings["simpson_gap"])
+    pairs.to_csv(tables / "eda_correlation_pairs.csv", index=False)
+    figures.correlation_panels(matrices, figs / "eda_correlations.png")
+    LOG.info(
+        "eda: %d of %d predictor pairs flagged pooled vs within",
+        (pairs["flag"] != "").sum(),
+        len(pairs),
+    )
+
+    icc = eda.variance_partition(train, columns)
+    icc.to_csv(tables / "eda_variance_partition.csv", index=False)
+    figures.icc_bars(icc, figs / "eda_variance_partition.png")
+
+    moran = eda.morans_table(
+        train,
+        columns,
+        k=settings["moran_k"],
+        n_permutations=settings["moran_permutations"],
+        rng=np.random.default_rng(config["seed"]),
+    )
+    moran.to_csv(tables / "eda_morans_i.csv", index=False)
+
+    eda.vif_table(train, columns).to_csv(tables / "eda_vif.csv", index=False)
+    climate_all = [f"{settings['climate_all_prefix']}{i}" for i in range(1, 20)]
+    clusters, check = eda.climate_clusters(
+        train, climate_all, config["blocks"]["C"], settings["climate_cluster_rho"]
+    )
+    clusters.to_csv(tables / "eda_climate_clusters.csv", index=False)
+    check.to_csv(tables / "eda_climate_subset_check.csv", index=False)
+    LOG.info(
+        "eda: climate subset check: %d clusters; cluster-based set differs from pre-chosen: %s",
+        check.loc[0, "n_clusters"],
+        check.loc[0, "differs_from_pre_chosen"],
+    )
+
+    climate_soil = [c for c in columns if c not in config["blocks"]["G"]]
+    coverage = eda.coverage_table(train, climate_soil, n_components=settings["coverage_pcs"])
+    coverage.to_csv(tables / "eda_coverage.csv", index=False)
+    figures.coverage_bars(coverage, figs / "eda_coverage.png")
+
+    outline = _country_outline(paths)
+    figures.crop_group_maps(train, outline, figs / "eda_crop_group_maps.png")
+    cell = settings["grid_cell_km"] * 1000.0
+    grids = {
+        v: eda.grid_medians(train, v, cell, settings["grid_min_points"])
+        for v in settings["map_variables"]
+    }
+    figures.gridded_maps(grids, cell, outline, train, figs / "eda_soil_maps.png")
+    LOG.info("eda: tables in %s, figures in %s", tables, figs)
+
+
+def _country_outline(paths):
+    from eusoil.ingest.nuts import read_nuts
+
+    try:
+        return read_nuts(paths.nuts, level=0)
+    except (FileNotFoundError, OSError) as error:
+        LOG.warning("Country outlines not drawn: %s", error)
+        return None
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         prog="eusoil", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -374,6 +456,7 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--force", action="store_true", help="re-seal (only before any EDA)")
     sub.add_parser("variogram", help="indicator variograms; bootstrap block size")
     sub.add_parser("folds", help="kNNDM outer folds on the training points")
+    sub.add_parser("eda", help="exploratory analysis on the training points")
     args = parser.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -391,6 +474,7 @@ def main(argv: list[str] | None = None) -> None:
         "seal": cmd_seal,
         "variogram": cmd_variogram,
         "folds": cmd_folds,
+        "eda": cmd_eda,
     }
     commands[args.command](args, config, paths)
 

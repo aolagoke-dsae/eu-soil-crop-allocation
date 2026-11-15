@@ -131,6 +131,20 @@ variogram:
   block_cap_km: 200         # capped at 200 km
 
 # ---------------------------------------------------------------------------
+# Exploratory data analysis (protocol: Exploratory data analysis; training only)
+# ---------------------------------------------------------------------------
+eda:
+  climate_all_prefix: tc9120_bio      # the 19 variables for the climate-subset check
+  climate_cluster_rho: 0.8            # one variable per Spearman cluster at |rho| > 0.8
+  simpson_gap: 0.3                    # pooled vs within-group correlation gap to flag
+  moran_k: 8                          # k-nearest-neighbour weights, row-standardised
+  moran_permutations: 199
+  coverage_pcs: 3                     # PCA dimensions for the coverage hulls
+  grid_cell_km: 50                    # gridded soil maps: median per cell ...
+  grid_min_points: 5                  # ... shown only with at least 5 points (licence)
+  map_variables: [ph_cacl2, oc_log, n_log, p_log, k_log, clay]
+
+# ---------------------------------------------------------------------------
 # Precision check (protocol: Inferential statistics, "Precision check")
 # ---------------------------------------------------------------------------
 precision:

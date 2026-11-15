@@ -35,7 +35,7 @@ libpysal==4.15.1         # spatial weights
 esda==2.10.0             # Moran's I for predictors, classes and residuals
 
 # --- Statistical modelling ----------------------------------------------
-statsmodels==0.15.0      # H3 regressions, mixed models, Tobit via custom likelihood
+statsmodels==0.15.0      # random-intercept models (EDA variance partitioning)
 patsy==1.0.3             # spline and tensor-product terms in formulas
 
 # --- Machine learning ---------------------------------------------------
