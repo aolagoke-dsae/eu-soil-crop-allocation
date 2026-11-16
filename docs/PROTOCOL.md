@@ -1,6 +1,6 @@
 # LUCAS Crop Allocation: Analysis Protocol
 
-Dr. Adewole Olagoke · 10 November 2026, amended 15 November 2026 · revision 99
+Dr. Adewole Olagoke · 10 November 2026, amended 15 November 2026
 
 ## Purpose and scope
 
@@ -96,7 +96,7 @@ All sources are joined on the LUCAS `POINT_ID`, and every step records how many 
 | Copernicus DEM GLO-90 | Elevation, slope | Open, with the required Copernicus attribution | Point extraction |
 | Eurostat GISCO NUTS 2016 (the edition the soil file's NUTS codes follow) | Country, NUTS-2 region | Open | Point-in-polygon |
 
-**Coordinates.** Use the GPS position where the point was visited in the field, otherwise the theoretical position. Project to EPSG:3035 (ETRS89-LAEA Europe) for all distances, blocks and variograms. *Confirm on receipt:* coordinate column names and which file carries them.
+**Coordinates.** Use the GPS position where the point was visited in the field, otherwise the theoretical position. Project to EPSG:3035 (ETRS89-LAEA Europe) for all distances, blocks and variograms. *Confirm on receipt:* coordinate column names and which file carries them. *Settled in the data audit: A6.*
 
 **Join checks (automated).**
 
@@ -118,7 +118,7 @@ Cleaning rules are written as code with a unit test each, and every rule reports
 | Issue | Rule | Check or sensitivity |
 | --- | --- | --- |
 | Values below the limit of detection (`<LOD` strings, mainly P and K) | Parse to numeric; substitute LOD/2 and add a binary below-LOD indicator per variable | Report % below LOD by variable and country. Sensitivity: LOD/√2, LOD, and multiple imputation from a left-truncated log-normal |
-| Units | Convert to one documented unit per variable (P and K mg/kg, N and organic carbon g/kg) | *Confirm on receipt:* source units (P is listed in g/kg in one metadata source, which looks wrong for extractable P) |
+| Units | Convert to one documented unit per variable (P and K mg/kg, N and organic carbon g/kg) | *Confirm on receipt:* source units (P is listed in g/kg in one metadata source, which looks wrong for extractable P). *Settled in the data audit: units as in the JRC report's Table 3 (organic carbon, N and CaCO₃ in g/kg; P and K in mg/kg; EC in mS/m), fixed in `config/analysis.yaml` (A1).* |
 | Implausible values | Flag outside domain ranges (pH 3–10.5; organic carbon 0–600 g/kg; negative values) | Flagged values are reviewed by hand and excluded only with a documented physical or protocol reason, never deleted automatically |
 | Organic soils | Flag points with organic carbon > 120 g/kg (peat-like) | Sensitivity: refit without them |
 | Sampling depth | Keep the 0–20 cm standard samples | Count and exclude other depths |
@@ -152,7 +152,7 @@ Provisional grouping, to be fixed in the data audit from actual counts before an
 
 Total: 9,906 points in eight groups. Root crops (248 before filtering) were merged with maize as spring-sown, high-input row crops, and vineyards (297) with orchards as woody permanent crops, so that every group has at least 300 points (decision of 10.11.2026). Excluded, with counts in `reports/tables/audit_excluded_codes.csv`: E30 (spontaneously revegetated land, 192), B35 other fibre and oleaginous crops (44), vegetables, cotton, rice, tobacco and other small codes, nurseries, and BX1 (arable land identified only by photo-interpretation).
 
-*Confirm on receipt:* the exact 2018 code list and labels; the intensity column is an a-priori classification and is written into the code before any analysis and is used only descriptively (A12).
+*Confirm on receipt (settled in the data audit: A5; the excluded codes are in `reports/tables/audit_excluded_codes.csv`):* the exact 2018 code list and labels; the intensity column is an a-priori classification and is written into the code before any analysis and is used only descriptively (A12).
 
 **Rules.**
 
@@ -227,7 +227,7 @@ LUCAS points are spatially dependent, so any test that assumes independent obser
 - Holm across the four confirmatory tests (H1, H2, H3a, H3b), with decisions from 98.75% intervals as set out under Research questions. BH (10% FDR) across exploratory tests.
 - Every result is reported as estimate, interval, adjusted p-value and the decision under the pre-set rule, including the negligible and inconclusive ones.
 
-**Precision check before modelling.** With the actual class counts, simulate the expected width of the macro-F1 bootstrap interval. If it exceeds 0.04, the interval is too wide to tell a gain of 0.02 (the SESOI) apart from zero; then merge small classes or report H1 as underpowered before looking at results. Done in Phase 1: with 9,906 points in eight groups, the median width is about 0.006 for both 50 km and 100 km blocks (\`reports/tables/precision\_check.csv\`).
+**Precision check before modelling.** With the actual class counts, simulate the expected width of the macro-F1 bootstrap interval. If it exceeds 0.04, the interval is too wide to tell a gain of 0.02 (the SESOI) apart from zero; then merge small classes or report H1 as underpowered before looking at results. Done in Phase 1: with 9,906 points in eight groups, the median width is about 0.006 for both 50 km and 100 km blocks (`reports/tables/precision_check.csv`).
 
 ## Validation design
 
@@ -434,15 +434,15 @@ Work proceeds in gated phases. A phase starts only when the one before it is tic
 
 **Phase 0: setup (can start now, before the soil data arrive)**
 
-- [ ] Create the new repository and the layout above; pin the environment; add CI with the synthetic dataset
-- [ ] Commit this protocol to `docs/` (timestamp = pre-registration)
-- [ ] Download land cover, climate (TerraClimate; WorldClim for the internal check), DEM and NUTS; write and test their ingest scripts
+- [x] Create the new repository and the layout above; pin the environment; add CI with the synthetic dataset
+- [x] Commit this protocol to `docs/` (timestamp = pre-registration)
+- [x] Download land cover, climate (TerraClimate; WorldClim for the internal check), DEM and NUTS; write and test their ingest scripts
 
 **Phase 1: data audit (gate: sample flow and class counts agreed)**
 
-- [ ] Ingest topsoil; resolve every *confirm on receipt* item (columns, units, codes, coordinates)
-- [ ] Join, clean, and produce the sample flow table
-- [ ] Fix the crop grouping from real counts; run the precision simulation for H1
+- [x] Ingest topsoil; resolve every *confirm on receipt* item (columns, units, codes, coordinates)
+- [x] Join, clean, and produce the sample flow table
+- [x] Fix the crop grouping from real counts; run the precision simulation for H1
 
 **Phase 2: split and EDA (gate: kNNDM folds matched to the prediction domain, test set sealed)**
 
@@ -451,8 +451,8 @@ Work proceeds in gated phases. A phase starts only when the one before it is tic
 
 **Phase 3: Stage A model selection (gate: one algorithm chosen by the pre-set rule)**
 
-- [ ] Baselines, then candidate models under nested kNNDM CV with equal tuning budgets
-- [ ] Calibration check; record the selected model
+- [x] Baselines, then candidate models under nested kNNDM CV with equal tuning budgets
+- [x] Calibration check; record the selected model
 
 **Phase 4: hypothesis tests (gate: H1, H2, H3a and H3b decided, E1 reported, all with estimates and intervals)**
 
