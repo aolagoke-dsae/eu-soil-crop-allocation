@@ -10,10 +10,12 @@ and climate and terrain at each point.
 
 > **Status: in progress.** The analysis
 > protocol, with its hypotheses and decision rules fixed before modelling, is in
-> [`docs/PROTOCOL.md`](docs/PROTOCOL.md). Its phases 0 to 3 are complete: the
-> data audit, the sealed split, the exploratory analysis and the model
-> selection. The hypothesis tests are next. Results will appear here once the
-> sealed test set has been scored.
+> [`docs/PROTOCOL.md`](docs/PROTOCOL.md). Its phases 0 to 4 are complete: the
+> data audit, the sealed split, the exploratory analysis, the model selection
+> and the hypothesis tests, whose decisions are in
+> [`reports/tables/stage_b_decisions.csv`](reports/tables/stage_b_decisions.csv).
+> Interpretation and the sensitivity runs are next. A summary of the results
+> will appear here once the sealed test set has been scored.
 
 ## Reproducing the pipeline
 

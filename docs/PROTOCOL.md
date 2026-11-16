@@ -456,8 +456,8 @@ Work proceeds in gated phases. A phase starts only when the one before it is tic
 
 **Phase 4: hypothesis tests (gate: H1, H2, H3a and H3b decided, E1 reported, all with estimates and intervals)**
 
-- [ ] Block ladder (H1, H2, H3a); leave-one-country-out (H3b); performance against prediction distance (E1)
-- [ ] Holm adjustment; decisions against the 0.02 SESOI
+- [x] Block ladder (H1, H2, H3a); leave-one-country-out (H3b); performance against prediction distance (E1)
+- [x] Holm adjustment; decisions against the 0.02 SESOI
 
 **Phase 5: interpretation and sensitivity**
 
