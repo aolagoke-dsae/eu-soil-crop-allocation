@@ -772,9 +772,7 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--steps", nargs="+", type=int, help="subset of ladder steps (default: all)")
     p.add_argument("--n-jobs", type=int, default=-1, help="parallel jobs for the search")
     p = sub.add_parser("stage-b-validation", help="Stage B: E1 schemes and leave-one-country-out")
-    p.add_argument(
-        "--n-jobs", type=int, default=-1, help="parallel jobs inside each fit"
-    )
+    p.add_argument("--n-jobs", type=int, default=-1, help="parallel jobs inside each fit")
     sub.add_parser("stage-b-report", help="Stage B: decisions, Holm, E1")
     args = parser.parse_args(argv)
 
