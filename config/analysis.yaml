@@ -180,6 +180,18 @@ stage_a:
         max_features: {uniform: [0.3, 0.7]}         # 0.3-1.0
 
 # ---------------------------------------------------------------------------
+# Stage B: hypothesis tests (protocol: Stage B; Inferential statistics; E1)
+# ---------------------------------------------------------------------------
+stage_b:
+  model: random_forest                # Stage A selection (reports/tables/stage_a_selection.csv)
+  n_trials: 20                        # tuning budget per fold, the same for every ladder step
+  n_bootstrap: 2000                   # paired spatial block bootstrap resamples
+  alpha_decision: 0.0125              # 98.75% intervals: 95% Bonferroni-adjusted for 4 tests
+  random_repeats: 3                   # E1: random k-fold CV repeats
+  block_sizes_km: [25, 50, 100, 200]  # E1: square-block CV sizes
+  block_offsets: [0.0, 0.333, 0.667]  # grid shifts (share of the block size), one per repeat
+
+# ---------------------------------------------------------------------------
 # Precision check (protocol: Inferential statistics, "Precision check")
 # ---------------------------------------------------------------------------
 precision:

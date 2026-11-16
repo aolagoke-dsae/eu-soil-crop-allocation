@@ -57,6 +57,14 @@ python -m eusoil stage-a          # tune and score every candidate on the outer 
 python -m eusoil stage-a-report   # summary, the one-SE selection, calibration check
 ```
 
+Then the hypothesis tests (Stage B):
+
+```bash
+python -m eusoil stage-b-ladder       # six predictor sets, retuned per fold (resumable)
+python -m eusoil stage-b-validation   # final configuration: E1 schemes, leave-one-country-out
+python -m eusoil stage-b-report       # bootstrap estimands, decisions, Holm, E1 plateau
+```
+
 ## Related project
 
 [Soil Carbon Kriging](https://github.com/aolagoke-dsae/soil-carbon-kriging) works

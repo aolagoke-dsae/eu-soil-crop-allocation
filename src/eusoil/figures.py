@@ -327,3 +327,110 @@ def stage_a_scores(summary: pd.DataFrame, selected: str, path: Path) -> None:
     fig.tight_layout()
     fig.savefig(path)
     plt.close(fig)
+
+
+DECISION_COLOURS = {
+    "supported": "#2b8a3e",
+    "negligible": "#868e96",
+    "inconclusive": "#f59f00",
+    "reversed": "#c2255c",
+}
+
+
+def ladder_plot(steps: pd.DataFrame, decisions: pd.DataFrame, path: Path) -> None:
+    """Macro F1 per ladder step (95% block-bootstrap interval) and the decisions beside it."""
+    fig, (ax, bx) = plt.subplots(
+        1, 2, figsize=(12, 4.2), dpi=150, gridspec_kw={"width_ratios": [1.35, 1]}
+    )
+    y = np.arange(len(steps))[::-1]
+    ax.errorbar(
+        steps["macro_f1"],
+        y,
+        xerr=[steps["macro_f1"] - steps["ci95_low"], steps["ci95_high"] - steps["macro_f1"]],
+        fmt="o",
+        color=TARGET,
+        ecolor=INK,
+        elinewidth=1,
+        capsize=3,
+    )
+    ax.set_yticks(y)
+    ax.set_yticklabels(
+        [f"{s}. {b}" for s, b in zip(steps["step"], steps["blocks"], strict=True)], fontsize=8
+    )
+    ax.set_xlabel("Macro F1 (95% spatial block bootstrap interval)")
+    ax.set_title("Predictor-block ladder", loc="left", fontsize=11)
+    ax.spines[["top", "right"]].set_visible(False)
+
+    d = decisions.reset_index(drop=True)
+    yd = np.arange(len(d))[::-1]
+    for yi, row in zip(yd, d.itertuples(index=False), strict=True):
+        colour = DECISION_COLOURS.get(row.decision, INK)
+        bx.plot([row.decision_ci_low, row.decision_ci_high], [yi, yi], color=colour, linewidth=2)
+        bx.plot(row.estimate, yi, "o", color=colour)
+        bx.text(row.decision_ci_high, yi + 0.18, f" {row.decision}", fontsize=7, color=colour)
+    sesoi = float(d["sesoi"].iloc[0])
+    bx.axvline(0, color=INK, linewidth=0.8)
+    for x in (-sesoi, sesoi):
+        bx.axvline(x, color=INK, linestyle=":", linewidth=0.8)
+    bx.set_yticks(yd)
+    bx.set_yticklabels(d["hypothesis"], fontsize=8)
+    bx.set_xlabel("Difference in macro F1 (98.75% interval; dotted: SESOI)")
+    bx.set_title("Hypothesis decisions", loc="left", fontsize=11)
+    bx.spines[["top", "right"]].set_visible(False)
+    fig.tight_layout()
+    fig.savefig(path)
+    plt.close(fig)
+
+
+def e1_curve(curve: pd.DataFrame, path: Path) -> None:
+    """E1: macro F1 against median distance to the nearest training point, per scheme."""
+    fig, ax = plt.subplots(figsize=(7.5, 4.3), dpi=150)
+    ax.errorbar(
+        curve["median_distance_km"],
+        curve["macro_f1"],
+        yerr=[curve["macro_f1"] - curve["ci95_low"], curve["ci95_high"] - curve["macro_f1"]],
+        fmt="o-",
+        color=TARGET,
+        ecolor=INK,
+        elinewidth=1,
+        capsize=3,
+    )
+    for i, row in enumerate(curve.itertuples(index=False)):
+        ax.annotate(
+            row.scheme.replace("_", " "),
+            (row.median_distance_km, row.macro_f1),
+            textcoords="offset points",
+            xytext=(6, 6 if i % 2 == 0 else -12),  # alternate to keep close labels apart
+            fontsize=7,
+        )
+    domain = float(curve["domain_median_distance_km"].iloc[0])
+    ax.axvline(domain, color=CHOSEN, linestyle="--", linewidth=1)
+    ax.text(domain, ax.get_ylim()[0], " prediction domain", color=CHOSEN, fontsize=7, va="bottom")
+    ax.set_xscale("log")
+    ax.set_xlabel("Median distance to the nearest training point (km, log scale)")
+    ax.set_ylabel("Macro F1 (95% interval)")
+    ax.set_title("E1: performance against prediction distance", loc="left", fontsize=11)
+    ax.spines[["top", "right"]].set_visible(False)
+    fig.tight_layout()
+    fig.savefig(path)
+    plt.close(fig)
+
+
+def transfer_bars(transfer: pd.DataFrame, path: Path) -> None:
+    """H3b by country: macro F1 within the surveyed countries vs leave-one-country-out."""
+    data = transfer.sort_values("loss")
+    y = np.arange(len(data))
+    fig, ax = plt.subplots(figsize=(7.5, 0.28 * len(data) + 1.4), dpi=150)
+    ax.barh(y + 0.2, data["macro_f1_knndm"], height=0.38, color=TARGET, label="kNNDM CV")
+    ax.barh(y - 0.2, data["macro_f1_loco"], height=0.38, color=CHOSEN, label="Country left out")
+    ax.set_yticks(y)
+    ax.set_yticklabels(
+        [f"{c} (n = {n})" for c, n in zip(data["country"], data["n"], strict=True)], fontsize=7
+    )
+    ax.set_xlabel("Macro F1 within the country (classes present there)")
+    ax.legend(frameon=False, fontsize=8, loc="lower right")
+    ax.spines[["top", "right"]].set_visible(False)
+    ax.set_title("H3b: transfer to an unseen country", loc="left", fontsize=11)
+    fig.tight_layout()
+    fig.savefig(path)
+    plt.close(fig)

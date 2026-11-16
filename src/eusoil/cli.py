@@ -25,6 +25,9 @@ Phase 3:
 
 ``stage-a``         tune and score every candidate on the outer kNNDM folds (resumable)
 ``stage-a-report``  summary, the one-SE selection, calibration check
+``stage-b-ladder``  the predictor-block ladder, retuned per fold (H1, H2, H3a; resumable)
+``stage-b-validation``  final configuration under E1's schemes and leave-one-country-out
+``stage-b-report``  bootstrap estimands, decisions, Holm, E1 plateau
 
 Each command reads the outputs of the earlier ones from ``data/interim`` and
 ``data/processed``.
@@ -615,6 +618,130 @@ def cmd_stage_a_report(args, config, paths) -> None:
     )
 
 
+def _stage_b_common(paths, config):
+    data, dropped, columns, classes = _stage_a_data(paths, config)
+    selection = paths.reports / "tables" / "stage_a_selection.csv"
+    if not selection.exists():
+        sys.exit("Stage A is not reported yet: run 'python -m eusoil stage-a-report' first")
+    selected = pd.read_csv(selection).loc[0, "selected"]
+    if selected != config["stage_b"]["model"]:
+        sys.exit(
+            f"config stage_b.model is {config['stage_b']['model']!r} but Stage A selected "
+            f"{selected!r}; the protocol requires the Stage A choice"
+        )
+    block = paths.reports / "tables" / "bootstrap_block.csv"
+    if not block.exists():
+        sys.exit("No bootstrap block size: run 'python -m eusoil variogram' first")
+    block_km = float(pd.read_csv(block).loc[0, "bootstrap_block_km"])
+    return data, classes, block_km
+
+
+def _stage_b_dir(paths, part: str) -> Path:
+    return paths.interim / "stage_b" / part
+
+
+def cmd_stage_b_ladder(args, config, paths) -> None:
+    from eusoil.stage_b import run_ladder
+
+    data, classes, _ = _stage_b_common(paths, config)
+    LOG.info("stage B ladder: %d points, model %s", len(data), config["stage_b"]["model"])
+    run_ladder(
+        data, classes, _domain_xy(paths), config, _stage_b_dir(paths, "ladder"),
+        steps=args.steps, n_jobs=args.n_jobs,
+    )  # fmt: skip
+
+
+def _ladder_results(paths, config, data, classes, block_km):
+    from eusoil.stage_b import ladder_analysis
+
+    try:
+        return ladder_analysis(data, classes, config, _stage_b_dir(paths, "ladder"), block_km)
+    except ValueError as error:
+        sys.exit(f"{error}: finish 'python -m eusoil stage-b-ladder' first")
+
+
+def cmd_stage_b_validation(args, config, paths) -> None:
+    from eusoil.stage_b import final_params, final_step, run_validation, step_label
+
+    data, classes, block_km = _stage_b_common(paths, config)
+    _, estimands, folds = _ladder_results(paths, config, data, classes, block_km)
+    step = final_step(estimands)
+    params = final_params(folds[folds["label"] == step_label(step)])
+    LOG.info(
+        "stage B validation: final configuration = ladder step %d, parameters %s", step, params
+    )
+    run_validation(
+        data, classes, _domain_xy(paths), config, step, params,
+        _stage_b_dir(paths, "validation"), n_jobs=args.n_jobs,
+    )  # fmt: skip
+
+
+def cmd_stage_b_report(args, config, paths) -> None:
+    from eusoil import figures
+    from eusoil.knndm import nearest_distances
+    from eusoil.stage_b import (
+        final_params,
+        final_step,
+        holm,
+        step_label,
+        validation_analysis,
+        validation_schemes,
+    )
+
+    data, classes, block_km = _stage_b_common(paths, config)
+    steps, estimands, folds = _ladder_results(paths, config, data, classes, block_km)
+    step = final_step(estimands)
+    params = final_params(folds[folds["label"] == step_label(step)])
+    schemes = validation_schemes(data, config)
+    domain_km = (
+        float(
+            np.median(
+                nearest_distances(_domain_xy(paths), data[["easting", "northing"]].to_numpy())
+            )
+        )
+        / 1000
+    )
+    try:
+        h3b, transfer, curve, changes = validation_analysis(
+            data, classes, config, _stage_b_dir(paths, "validation"), schemes, block_km, domain_km
+        )
+    except FileNotFoundError as error:
+        sys.exit(f"{error}: run 'python -m eusoil stage-b-validation' first")
+
+    decisions = pd.concat([estimands, h3b], ignore_index=True)
+    adjusted = holm(dict(zip(decisions["hypothesis"], decisions["p_bootstrap"], strict=True)))
+    decisions["p_holm"] = decisions["hypothesis"].map(adjusted)
+    decisions["sesoi"] = config["precision"]["sesoi_macro_f1"]
+    decisions["bootstrap_block_km"] = block_km
+
+    tables, figs = paths.reports / "tables", paths.reports / "figures"
+    steps.to_csv(tables / "stage_b_ladder.csv", index=False)
+    folds.drop(columns=[c for c in folds.columns if c.startswith("f1__")]).to_csv(
+        tables / "stage_b_ladder_folds.csv", index=False
+    )
+    decisions.to_csv(tables / "stage_b_decisions.csv", index=False)
+    transfer.to_csv(tables / "stage_b_transfer_by_country.csv", index=False)
+    curve.to_csv(tables / "stage_b_e1_curve.csv", index=False)
+    changes.to_csv(tables / "stage_b_e1_plateau.csv", index=False)
+    pd.DataFrame([{"final_step": step} | params]).to_csv(
+        tables / "stage_b_final_configuration.csv", index=False
+    )
+    figures.ladder_plot(steps, decisions, figs / "stage_b_ladder.png")
+    figures.e1_curve(curve, figs / "stage_b_e1.png")
+    figures.transfer_bars(transfer, figs / "stage_b_transfer.png")
+    for row in decisions.itertuples(index=False):
+        LOG.info(
+            "%s: %.3f (98.75%% interval %.3f to %.3f), p Holm %.4f -> %s",
+            row.hypothesis,
+            row.estimate,
+            row.decision_ci_low,
+            row.decision_ci_high,
+            row.p_holm,
+            row.decision,
+        )
+    LOG.info("E1 plateau: %s; final configuration: ladder step %d", changes.loc[0, "plateau"], step)
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         prog="eusoil", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -641,6 +768,14 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--repeats", nargs="+", type=int, help="subset of repeats (default: all)")
     p.add_argument("--n-jobs", type=int, default=-1, help="parallel jobs for the search")
     sub.add_parser("stage-a-report", help="Stage A: summary, selection, calibration")
+    p = sub.add_parser("stage-b-ladder", help="Stage B: predictor-block ladder (H1, H2, H3a)")
+    p.add_argument("--steps", nargs="+", type=int, help="subset of ladder steps (default: all)")
+    p.add_argument("--n-jobs", type=int, default=-1, help="parallel jobs for the search")
+    p = sub.add_parser("stage-b-validation", help="Stage B: E1 schemes and leave-one-country-out")
+    p.add_argument(
+        "--n-jobs", type=int, default=-1, help="parallel jobs inside each fit"
+    )
+    sub.add_parser("stage-b-report", help="Stage B: decisions, Holm, E1")
     args = parser.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -661,6 +796,9 @@ def main(argv: list[str] | None = None) -> None:
         "eda": cmd_eda,
         "stage-a": cmd_stage_a,
         "stage-a-report": cmd_stage_a_report,
+        "stage-b-ladder": cmd_stage_b_ladder,
+        "stage-b-validation": cmd_stage_b_validation,
+        "stage-b-report": cmd_stage_b_report,
     }
     commands[args.command](args, config, paths)
 

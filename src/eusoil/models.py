@@ -265,10 +265,12 @@ class FoldTask:
     model: str
     repeat: int
     fold: int
+    label: str = ""  # Stage B: ladder step or validation scheme
 
     @property
     def stem(self) -> str:
-        return f"{self.model}_s{self.repeat}_f{self.fold}"
+        prefix = f"{self.model}_{self.label}" if self.label else self.model
+        return f"{prefix}_s{self.repeat}_f{self.fold}"
 
 
 def inner_splits(
@@ -296,11 +298,21 @@ def run_fold(
     domain_xy: np.ndarray,
     config: dict[str, Any],
     n_jobs: int,
+    fold_column: str | None = None,
+    n_trials: int | None = None,
+    fixed_params: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], pd.DataFrame]:
-    """Tune on inner folds, fit, and score one outer fold of one repeat."""
+    """Tune on inner folds, fit, and score one outer fold of one repeat.
+
+    ``fold_column`` defaults to the kNNDM outer folds of the task's repeat.
+    ``n_trials`` overrides the Stage A budget (Stage B). With
+    ``fixed_params`` the search is skipped and the model is fitted with
+    those hyperparameters (the final configuration in Stage B's validation
+    schemes).
+    """
     settings = config["stage_a"]
     seed = int(config["seed"]) + 1000 * task.repeat + task.fold
-    fold_col = f"outer_fold_s{task.repeat}"
+    fold_col = fold_column or f"outer_fold_s{task.repeat}"
     test_mask = data[fold_col].eq(task.fold).to_numpy()
     train, test = data[~test_mask].reset_index(drop=True), data[test_mask].reset_index(drop=True)
     x_train, y_train = train[_x_columns(columns)], train[TARGET].to_numpy()
@@ -310,6 +322,7 @@ def run_fold(
     estimator = build_estimator(task.model, columns, spec.get("fixed", {}), seed)
     record: dict[str, Any] = {
         "model": task.model,
+        "label": task.label,
         "repeat": task.repeat,
         "fold": task.fold,
         "n_train": len(train),
@@ -318,11 +331,17 @@ def run_fold(
     if task.model in UNTUNED:
         fitted = clone(estimator).fit(x_train, y_train)
         record |= {"best_params": "{}", "inner_score": np.nan}
+    elif fixed_params is not None:
+        estimator.set_params(**{f"model__{k}": v for k, v in fixed_params.items()})
+        if "model__n_jobs" in estimator.get_params():
+            estimator.set_params(model__n_jobs=n_jobs)  # one fit, so parallelise inside it
+        fitted = clone(estimator).fit(x_train, y_train)
+        record |= {"best_params": json.dumps(fixed_params, sort_keys=True), "inner_score": np.nan}
     else:
         search = RandomizedSearchCV(
             estimator,
             search_space(spec["search"]),
-            n_iter=settings["n_trials"],
+            n_iter=n_trials or settings["n_trials"],
             scoring=settings["tuning_metric"],
             cv=inner_splits(train, domain_xy, config["split"], seed),
             refit=True,
