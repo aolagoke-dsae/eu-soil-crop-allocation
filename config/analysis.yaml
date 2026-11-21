@@ -192,6 +192,26 @@ stage_b:
   block_offsets: [0.0, 0.333, 0.667]  # grid shifts (share of the block size), one per repeat
 
 # ---------------------------------------------------------------------------
+# Phase 5: interpretation and sensitivity (protocol: Interpretation;
+# Sensitivity and robustness analyses; amendment A18)
+# ---------------------------------------------------------------------------
+interpretation:
+  n_repeats_grouped: 30               # shuffles per block and fold
+  n_repeats_single: 10                # shuffles per variable and fold (ranking stability)
+  ale_variables: [ph_cacl2, p_log, k_log, tc9120_bio12, tc9120_bio1]
+  ale_bins: 20                        # quantile bins of the training data
+  shap_sample: 300                    # points per fold (repeat 1) for TreeSHAP
+  min_region_points: 10               # regional maps: regions with fewer points are hidden
+  moran_k: 8
+  moran_permutations: 199
+
+sensitivity:
+  n_imputations: 5                    # multiple imputation of below-LOD values
+  largest_countries: [ES, FR, PL, IT, DE]   # by training points
+  # Hyperparameters are fixed (amendment A18): each ladder step takes the
+  # per-parameter median of its Stage B tuned values.
+
+# ---------------------------------------------------------------------------
 # Precision check (protocol: Inferential statistics, "Precision check")
 # ---------------------------------------------------------------------------
 precision:

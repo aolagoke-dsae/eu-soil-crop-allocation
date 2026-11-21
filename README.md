@@ -69,6 +69,14 @@ python -m eusoil stage-b-validation   # final configuration: E1 schemes, leave-o
 python -m eusoil stage-b-report       # bootstrap estimands, decisions, Holm, E1 plateau
 ```
 
+Phase 5 explains the final model and tests how robust the decisions are:
+
+```bash
+python -m eusoil interpret            # block and variable importance, ALE, SHAP, error maps
+python -m eusoil sensitivity          # 61 runs with fixed hyperparameters (resumable)
+python -m eusoil sensitivity-report   # summary table and robustness verdicts
+```
+
 ## Related project
 
 [Soil Carbon Kriging](https://github.com/aolagoke-dsae/soil-carbon-kriging) works

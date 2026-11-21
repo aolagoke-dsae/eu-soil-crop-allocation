@@ -92,8 +92,18 @@ def _one_hot() -> OneHotEncoder:
     return OneHotEncoder(handle_unknown="ignore", sparse_output=False)
 
 
-def build_estimator(name: str, columns: list[str], fixed: dict[str, Any], seed: int) -> Pipeline:
-    """The candidate ``name`` as a pipeline whose preprocessing is fitted per fold."""
+def build_estimator(
+    name: str,
+    columns: list[str],
+    fixed: dict[str, Any],
+    seed: int,
+    class_weight: str | None = "balanced",
+) -> Pipeline:
+    """The candidate ``name`` as a pipeline whose preprocessing is fitted per fold.
+
+    ``class_weight`` is inverse-frequency weighting (``"balanced"``, the
+    protocol's choice) or ``None`` (the unweighted sensitivity run).
+    """
     continuous, binary, categorical = _split_columns(columns)
     if name in UNTUNED:
         strategy = "most_frequent" if name == "majority" else "stratified"
@@ -126,7 +136,7 @@ def build_estimator(name: str, columns: list[str], fixed: dict[str, Any], seed: 
             [("spline", spline, continuous), ("bin", "passthrough", binary)]
             + ([("cat", _one_hot(), categorical)] if categorical else [])
         )
-        model = LogisticRegression(class_weight="balanced", max_iter=5000)
+        model = LogisticRegression(class_weight=class_weight, max_iter=5000)
         return Pipeline([("prep", prep), ("model", model)])
 
     prep = ColumnTransformer(
@@ -135,14 +145,14 @@ def build_estimator(name: str, columns: list[str], fixed: dict[str, Any], seed: 
     )
     if name == "random_forest":
         model = RandomForestClassifier(
-            class_weight="balanced",
+            class_weight=class_weight,
             n_estimators=int(fixed.get("n_estimators", 400)),
             n_jobs=1,
             random_state=seed,
         )
     elif name == "boosting":
         model = HistGradientBoostingClassifier(
-            class_weight="balanced",
+            class_weight=class_weight,
             random_state=seed,
             **{k: v for k, v in fixed.items()},
         )
@@ -301,17 +311,27 @@ def run_fold(
     fold_column: str | None = None,
     n_trials: int | None = None,
     fixed_params: dict[str, Any] | None = None,
-) -> tuple[dict[str, Any], pd.DataFrame]:
+    class_weight: str | None = "balanced",
+    seed_shift: int = 0,
+    weight_column: str | None = None,
+    return_model: bool = False,
+):
     """Tune on inner folds, fit, and score one outer fold of one repeat.
 
     ``fold_column`` defaults to the kNNDM outer folds of the task's repeat.
     ``n_trials`` overrides the Stage A budget (Stage B). With
     ``fixed_params`` the search is skipped and the model is fitted with
     those hyperparameters (the final configuration in Stage B's validation
-    schemes).
+    schemes and the Phase 5 sensitivity runs).
+
+    The remaining options serve the sensitivity runs: ``class_weight``
+    (``None`` for the unweighted run), ``seed_shift`` (other model seeds) and
+    ``weight_column`` (survey-design weights, passed to the fit as
+    ``sample_weight``; only with ``fixed_params``). ``return_model=True``
+    adds the fitted pipeline and the test frame to the return value.
     """
     settings = config["stage_a"]
-    seed = int(config["seed"]) + 1000 * task.repeat + task.fold
+    seed = int(config["seed"]) + 1000 * task.repeat + task.fold + seed_shift
     fold_col = fold_column or f"outer_fold_s{task.repeat}"
     test_mask = data[fold_col].eq(task.fold).to_numpy()
     train, test = data[~test_mask].reset_index(drop=True), data[test_mask].reset_index(drop=True)
@@ -319,7 +339,7 @@ def run_fold(
     x_test, y_test = test[_x_columns(columns)], test[TARGET].to_numpy()
 
     spec = settings["models"].get(task.model, {})
-    estimator = build_estimator(task.model, columns, spec.get("fixed", {}), seed)
+    estimator = build_estimator(task.model, columns, spec.get("fixed", {}), seed, class_weight)
     record: dict[str, Any] = {
         "model": task.model,
         "label": task.label,
@@ -335,7 +355,10 @@ def run_fold(
         estimator.set_params(**{f"model__{k}": v for k, v in fixed_params.items()})
         if "model__n_jobs" in estimator.get_params():
             estimator.set_params(model__n_jobs=n_jobs)  # one fit, so parallelise inside it
-        fitted = clone(estimator).fit(x_train, y_train)
+        fit_kwargs = {}
+        if weight_column is not None:
+            fit_kwargs["model__sample_weight"] = train[weight_column].to_numpy()
+        fitted = clone(estimator).fit(x_train, y_train, **fit_kwargs)
         record |= {"best_params": json.dumps(fixed_params, sort_keys=True), "inner_score": np.nan}
     else:
         search = RandomizedSearchCV(
@@ -365,6 +388,8 @@ def run_fold(
     predictions.insert(2, "repeat", task.repeat)
     predictions.insert(3, "fold", task.fold)
     predictions.insert(4, "model", task.model)
+    if return_model:
+        return record, predictions, fitted, test
     return record, predictions
 
 

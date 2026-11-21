@@ -77,11 +77,17 @@ def _run_tasks(
         if done.exists():
             continue
         record, predictions = run_fold(
-            task, data, options["columns"], classes, domain_xy, config, n_jobs,
+            task,
+            data,
+            options["columns"],
+            classes,
+            domain_xy,
+            config,
+            n_jobs,
             fold_column=options.get("fold_column"),
             n_trials=options.get("n_trials"),
             fixed_params=options.get("fixed_params"),
-        )  # fmt: skip
+        )
         predictions.to_parquet(checkpoint / f"{task.stem}.parquet", index=False)
         done.write_text(json.dumps(record, default=_plain, indent=1))
         LOG.info(
@@ -231,7 +237,10 @@ class BlockBootstrap:
         scores: dict[str, list[pd.DataFrame]],
         classes: list[str],
         block_m: float,
+        weights: pd.Series | None = None,
     ):
+        """``weights`` (indexed by point_id) weight each point's confusion count;
+        used by the survey-design sensitivity run. Unweighted by default."""
         self.classes = classes
         xy = points.set_index("point_id")[COORDINATES]
         self.order = xy.index.to_numpy()
@@ -247,7 +256,11 @@ class BlockBootstrap:
                 y = table["y_true"].map(index_of).to_numpy()
                 pred = predicted_class_index(table, classes)
                 b = block_of.loc[table["point_id"]].to_numpy()
-                cm = per_block_confusion(y, pred, b, k)
+                if weights is None:
+                    cm = per_block_confusion(y, pred, b, k)
+                else:
+                    cm = np.zeros((int(b.max()) + 1, k, k))
+                    np.add.at(cm, (b, y, pred), weights.loc[table["point_id"]].to_numpy())
                 if cm.shape[0] < self.n_blocks:
                     cm = np.concatenate([cm, np.zeros((self.n_blocks - cm.shape[0], k, k), int)])
                 mats.append(cm)

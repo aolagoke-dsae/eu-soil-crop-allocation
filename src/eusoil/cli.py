@@ -29,6 +29,12 @@ Phase 3:
 ``stage-b-validation``  final configuration under E1's schemes and leave-one-country-out
 ``stage-b-report``  bootstrap estimands, decisions, Holm, E1 plateau
 
+Phase 5:
+
+``interpret``         importance, ALE, SHAP, noise control, error analysis (final model)
+``sensitivity``       every sensitivity run with fixed hyperparameters (resumable)
+``sensitivity-report``  the summary table and the robustness verdicts
+
 Each command reads the outputs of the earlier ones from ``data/interim`` and
 ``data/processed``.
 """
@@ -646,9 +652,14 @@ def cmd_stage_b_ladder(args, config, paths) -> None:
     data, classes, _ = _stage_b_common(paths, config)
     LOG.info("stage B ladder: %d points, model %s", len(data), config["stage_b"]["model"])
     run_ladder(
-        data, classes, _domain_xy(paths), config, _stage_b_dir(paths, "ladder"),
-        steps=args.steps, n_jobs=args.n_jobs,
-    )  # fmt: skip
+        data,
+        classes,
+        _domain_xy(paths),
+        config,
+        _stage_b_dir(paths, "ladder"),
+        steps=args.steps,
+        n_jobs=args.n_jobs,
+    )
 
 
 def _ladder_results(paths, config, data, classes, block_km):
@@ -671,9 +682,15 @@ def cmd_stage_b_validation(args, config, paths) -> None:
         "stage B validation: final configuration = ladder step %d, parameters %s", step, params
     )
     run_validation(
-        data, classes, _domain_xy(paths), config, step, params,
-        _stage_b_dir(paths, "validation"), n_jobs=args.n_jobs,
-    )  # fmt: skip
+        data,
+        classes,
+        _domain_xy(paths),
+        config,
+        step,
+        params,
+        _stage_b_dir(paths, "validation"),
+        n_jobs=args.n_jobs,
+    )
 
 
 def cmd_stage_b_report(args, config, paths) -> None:
@@ -742,6 +759,188 @@ def cmd_stage_b_report(args, config, paths) -> None:
     LOG.info("E1 plateau: %s; final configuration: ladder step %d", changes.loc[0, "plateau"], step)
 
 
+def _final_configuration(paths) -> tuple[int, dict]:
+    path = paths.reports / "tables" / "stage_b_final_configuration.csv"
+    if not path.exists():
+        sys.exit("No final configuration: run 'python -m eusoil stage-b-report' first")
+    row = pd.read_csv(path).iloc[0].to_dict()
+    step = int(row.pop("final_step"))
+    params = {
+        k: (
+            None
+            if pd.isna(v)
+            else (int(v) if float(v).is_integer() and k != "max_features" else float(v))
+        )
+        for k, v in row.items()
+    }
+    return step, params
+
+
+def cmd_interpret(args, config, paths) -> None:
+    from eusoil import figures
+    from eusoil.interpret import error_analysis, run_interpretation
+    from eusoil.models import predictor_columns
+    from eusoil.stage_b import LADDER, load_predictions
+
+    data, classes, _ = _stage_b_common(paths, config)
+    step, params = _final_configuration(paths)
+    columns = predictor_columns(config, LADDER[step])
+    blocks = {b: list(config["blocks"][b]) for b in LADDER[step]}
+    LOG.info("interpret: ladder step %d, parameters %s", step, params)
+    out = run_interpretation(
+        data, classes, _domain_xy(paths), config, columns, blocks, params, args.n_jobs
+    )
+
+    tables, figs = paths.reports / "tables", paths.reports / "figures"
+    out["grouped"].to_csv(tables / "interpret_grouped_importance.csv", index=False)
+    out["single"].sort_values("drop_macro_f1", ascending=False).to_csv(
+        tables / "interpret_variable_importance.csv", index=False
+    )
+    out["stability"].to_csv(tables / "interpret_ranking_stability.csv", index=False)
+    out["ale"].to_csv(tables / "interpret_ale.csv", index=False)
+    out["noise"].to_csv(tables / "interpret_noise_control.csv", index=False)
+    out["shap"].to_csv(tables / "interpret_shap_mean_abs.csv", index=False)
+    figures.importance_bars(out["grouped"], out["noise"], figs / "interpret_importance.png")
+    figures.class_importance_heatmap(
+        out["grouped"], classes, figs / "interpret_class_importance.png"
+    )
+    figures.ale_panels(out["ale"], classes, figs / "interpret_ale.png")
+
+    settings = config["interpretation"]
+    predictions = load_predictions(_stage_b_dir(paths, "validation"), "knndm")
+    errors = error_analysis(
+        data,
+        predictions,
+        classes,
+        settings["min_region_points"],
+        settings["moran_k"],
+        settings["moran_permutations"],
+        np.random.default_rng(int(config["seed"]) + 16_000),
+    )
+    errors["confusion"].to_csv(tables / "interpret_confusion_normalised.csv")
+    errors["by_country"].to_csv(tables / "interpret_macro_f1_by_country.csv", index=False)
+    errors["by_nuts2"].to_csv(tables / "interpret_macro_f1_by_nuts2.csv", index=False)
+    errors["morans"].to_csv(tables / "interpret_error_morans_i.csv", index=False)
+    figures.confusion_heatmap(errors["confusion"], figs / "interpret_confusion.png")
+    try:
+        from eusoil.ingest.nuts import read_nuts
+
+        figures.region_map(
+            read_nuts(paths.nuts, 2),
+            errors["by_nuts2"],
+            "nuts2",
+            read_nuts(paths.nuts, 0),
+            figs / "interpret_macro_f1_nuts2.png",
+            "Macro F1 by NUTS-2 region (kNNDM CV; regions with at least "
+            f"{settings['min_region_points']} points)",
+        )
+    except (FileNotFoundError, OSError) as error:
+        LOG.warning("NUTS-2 map not drawn: %s", error)
+    LOG.info(
+        "interpret: noise control drop %.4f (95%% %.4f to %.4f); ranking stability tau %.2f; "
+        "error Moran's I %.3f",
+        out["noise"]["drop_macro_f1"].iloc[0],
+        out["noise"]["drop_macro_f1_lo"].iloc[0],
+        out["noise"]["drop_macro_f1_hi"].iloc[0],
+        out["stability"]["tau_mean"].iloc[0],
+        errors["morans"]["morans_i"].mean(),
+    )
+
+
+def _sensitivity_setup(paths, config):
+    from eusoil.sensitivity import registry
+
+    data, classes, block_km = _stage_b_common(paths, config)
+    check = paths.reports / "tables" / "eda_climate_subset_check.csv"
+    if not check.exists():
+        sys.exit("No climate-subset check: run 'python -m eusoil eda' first")
+    cluster = pd.read_csv(check).loc[0, "cluster_based_set"].split(";")
+    runs = registry(config, sorted(data["country"].unique()), cluster)
+    domain = pd.read_parquet(paths.interim / "domain.parquet", columns=["nuts0"])
+    domain_counts = domain["nuts0"].value_counts()
+    return data, block_km, runs, domain_counts
+
+
+def cmd_sensitivity(args, config, paths) -> None:
+    from eusoil.sensitivity import run_variation
+
+    data, _, runs, domain_counts = _sensitivity_setup(paths, config)
+    if args.runs:
+        unknown = set(args.runs) - {r.name for r in runs}
+        if unknown:
+            sys.exit(f"Unknown runs: {sorted(unknown)}")
+        runs = [r for r in runs if r.name in args.runs]
+    LOG.info("sensitivity: %d runs", len(runs))
+    for variation in runs:
+        run_variation(
+            variation,
+            data,
+            _domain_xy(paths),
+            domain_counts,
+            config,
+            _stage_a_dir(paths),
+            _stage_b_dir(paths, "ladder"),
+            paths.interim / "sensitivity",
+            n_jobs=args.n_jobs,
+        )
+
+
+def cmd_sensitivity_report(args, config, paths) -> None:
+    from eusoil import figures
+    from eusoil.sensitivity import NOT_RUN, analyse_variation, robustness
+
+    data, block_km, runs, domain_counts = _sensitivity_setup(paths, config)
+    rows = []
+    for variation in runs:
+        try:
+            rows += analyse_variation(
+                variation, data, domain_counts, config, paths.interim / "sensitivity", block_km
+            )
+        except FileNotFoundError as error:
+            sys.exit(f"{error}: finish 'python -m eusoil sensitivity' first")
+    summary = pd.DataFrame(rows)
+    front = [
+        "run",
+        "area",
+        "description",
+        "hypothesis",
+        "estimate",
+        "decision_ci_low",
+        "decision_ci_high",
+        "ci95_low",
+        "ci95_high",
+        "decision",
+        "n_points",
+        "n_classes",
+    ]
+    summary = summary[
+        [c for c in front if c in summary.columns] + [c for c in summary.columns if c not in front]
+    ]
+    tables, figs = paths.reports / "tables", paths.reports / "figures"
+    summary.to_csv(tables / "sensitivity_summary.csv", index=False)
+    pd.DataFrame(NOT_RUN).to_csv(tables / "sensitivity_not_run.csv", index=False)
+    verdicts = robustness(summary)
+    verdicts.to_csv(tables / "sensitivity_robustness.csv", index=False)
+    figures.sensitivity_forest(summary, figs / "sensitivity_forest.png")
+    for row in verdicts.itertuples(index=False):
+        LOG.info(
+            "%s: reference %s; %d of %d runs disagree -> %s",
+            row.hypothesis,
+            row.reference_decision,
+            row.n_disagree,
+            row.n_runs,
+            row.verdict,
+        )
+    control = summary[
+        (summary["run"] == "permuted_labels") & (summary["hypothesis"] == "macro_f1_step5")
+    ]
+    if not control.empty:
+        LOG.info(
+            "negative control (labels permuted within country): macro F1 %.3f",
+            control["estimate"].iloc[0],
+        )
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         prog="eusoil", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -774,6 +973,12 @@ def main(argv: list[str] | None = None) -> None:
     p = sub.add_parser("stage-b-validation", help="Stage B: E1 schemes and leave-one-country-out")
     p.add_argument("--n-jobs", type=int, default=-1, help="parallel jobs inside each fit")
     sub.add_parser("stage-b-report", help="Stage B: decisions, Holm, E1")
+    p = sub.add_parser("interpret", help="Phase 5: importance, ALE, SHAP, error analysis")
+    p.add_argument("--n-jobs", type=int, default=-1, help="parallel jobs inside each fit")
+    p = sub.add_parser("sensitivity", help="Phase 5: sensitivity runs (resumable)")
+    p.add_argument("--runs", nargs="+", help="subset of runs by name (default: all)")
+    p.add_argument("--n-jobs", type=int, default=-1, help="parallel jobs inside each fit")
+    sub.add_parser("sensitivity-report", help="Phase 5: sensitivity summary and robustness")
     args = parser.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -797,6 +1002,9 @@ def main(argv: list[str] | None = None) -> None:
         "stage-b-ladder": cmd_stage_b_ladder,
         "stage-b-validation": cmd_stage_b_validation,
         "stage-b-report": cmd_stage_b_report,
+        "interpret": cmd_interpret,
+        "sensitivity": cmd_sensitivity,
+        "sensitivity-report": cmd_sensitivity_report,
     }
     commands[args.command](args, config, paths)
 

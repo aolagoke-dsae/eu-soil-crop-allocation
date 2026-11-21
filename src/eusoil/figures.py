@@ -434,3 +434,171 @@ def transfer_bars(transfer: pd.DataFrame, path: Path) -> None:
     fig.tight_layout()
     fig.savefig(path)
     plt.close(fig)
+
+
+# --- Phase 5 -------------------------------------------------------------------------
+
+
+def importance_bars(grouped: pd.DataFrame, noise: pd.DataFrame, path: Path) -> None:
+    """Grouped permutation importance per block and the noise control."""
+    data = pd.concat([grouped, noise], ignore_index=True).sort_values("drop_macro_f1")
+    y = np.arange(len(data))
+    fig, ax = plt.subplots(figsize=(7, 0.5 * len(data) + 1.3), dpi=150)
+    colours = [RANDOM if g == "noise_control" else TARGET for g in data["group"]]
+    ax.barh(y, data["drop_macro_f1"], color=colours)
+    ax.errorbar(
+        data["drop_macro_f1"],
+        y,
+        xerr=[
+            data["drop_macro_f1"] - data["drop_macro_f1_lo"],
+            data["drop_macro_f1_hi"] - data["drop_macro_f1"],
+        ],
+        fmt="none",
+        ecolor=INK,
+        elinewidth=1,
+        capsize=3,
+    )
+    ax.set_yticks(y)
+    ax.set_yticklabels([_label(g) for g in data["group"]], fontsize=8)
+    ax.axvline(0, color=INK, linewidth=0.8)
+    ax.set_xlabel("Drop in macro F1 when the block is shuffled (95% interval over folds)")
+    ax.set_title("How much the final model relies on each block", loc="left", fontsize=11)
+    ax.spines[["top", "right"]].set_visible(False)
+    fig.tight_layout()
+    fig.savefig(path)
+    plt.close(fig)
+
+
+def class_importance_heatmap(grouped: pd.DataFrame, classes: list[str], path: Path) -> None:
+    """Drop in each crop group's F1 when a block is shuffled."""
+    matrix = grouped.set_index("group")[[f"drop_f1__{c}" for c in classes]]
+    fig, ax = plt.subplots(figsize=(9, 0.6 * len(matrix) + 2), dpi=150)
+    limit = float(np.nanmax(np.abs(matrix.to_numpy())))
+    image = ax.imshow(matrix.to_numpy(), cmap="RdBu_r", vmin=-limit, vmax=limit, aspect="auto")
+    ax.set_xticks(range(len(classes)))
+    ax.set_xticklabels([_label(c) for c in classes], rotation=35, ha="right", fontsize=7)
+    ax.set_yticks(range(len(matrix)))
+    ax.set_yticklabels([_label(g) for g in matrix.index], fontsize=8)
+    for i in range(matrix.shape[0]):
+        for j in range(matrix.shape[1]):
+            ax.text(
+                j, i, f"{matrix.iat[i, j]:.3f}", ha="center", va="center", fontsize=6.5, color=INK
+            )
+    fig.colorbar(image, ax=ax, shrink=0.8, label="Drop in class F1")
+    ax.set_title("Per-class reliance on each block (exploratory)", loc="left", fontsize=11)
+    fig.tight_layout()
+    fig.savefig(path)
+    plt.close(fig)
+
+
+def ale_panels(ale: pd.DataFrame, classes: list[str], path: Path) -> None:
+    """ALE of each crop group's probability along each variable (band: 2.5-97.5% over folds)."""
+    variables = list(dict.fromkeys(ale["variable"]))
+    fig, axes = plt.subplots(
+        1, len(variables), figsize=(3.4 * len(variables), 3.6), dpi=150, squeeze=False
+    )
+    for ax, variable in zip(axes.flat, variables, strict=True):
+        for c, colour in zip(classes, GROUP_COLOURS, strict=False):
+            d = ale[(ale["variable"] == variable) & (ale["crop_group"] == c)]
+            ax.plot(d["value"], d["ale"], color=colour, linewidth=1.3, label=_label(c))
+            ax.fill_between(
+                d["value"], d["ale_lo"], d["ale_hi"], color=colour, alpha=0.12, linewidth=0
+            )
+        ax.axhline(0, color=INK, linewidth=0.6)
+        ax.set_title(variable, fontsize=9, loc="left")
+        ax.tick_params(labelsize=7)
+        ax.spines[["top", "right"]].set_visible(False)
+    axes.flat[0].set_ylabel("ALE of predicted probability", fontsize=8)
+    axes.flat[-1].legend(frameon=False, fontsize=6.5, loc="center left", bbox_to_anchor=(1.0, 0.5))
+    fig.suptitle("Accumulated local effects, final model", x=0.01, ha="left", fontsize=11)
+    fig.tight_layout()
+    fig.savefig(path, bbox_inches="tight")
+    plt.close(fig)
+
+
+def confusion_heatmap(confusion: pd.DataFrame, path: Path) -> None:
+    """Row-normalised confusion matrix (share of each true group predicted as each group)."""
+    fig, ax = plt.subplots(figsize=(7.5, 6.5), dpi=150)
+    image = ax.imshow(confusion.to_numpy(), cmap="Blues", vmin=0, vmax=1)
+    labels = [_label(c) for c in confusion.index]
+    ax.set_xticks(range(len(labels)))
+    ax.set_xticklabels(labels, rotation=35, ha="right", fontsize=7)
+    ax.set_yticks(range(len(labels)))
+    ax.set_yticklabels(labels, fontsize=7)
+    for i in range(confusion.shape[0]):
+        for j in range(confusion.shape[1]):
+            v = confusion.iat[i, j]
+            ax.text(
+                j,
+                i,
+                f"{v:.2f}",
+                ha="center",
+                va="center",
+                fontsize=6.5,
+                color="white" if v > 0.5 else INK,
+            )
+    ax.set_xlabel("Predicted")
+    ax.set_ylabel("Observed")
+    fig.colorbar(image, ax=ax, shrink=0.8)
+    ax.set_title("Confusion matrix, kNNDM CV (rows sum to 1)", loc="left", fontsize=11)
+    fig.tight_layout()
+    fig.savefig(path)
+    plt.close(fig)
+
+
+def region_map(regions, values: pd.DataFrame, key: str, outline, path: Path, title: str) -> None:
+    """Choropleth of macro F1 per region; regions without enough points are left grey."""
+    fig, ax = plt.subplots(figsize=(8, 7.5), dpi=150)
+    if outline is not None:
+        outline.plot(ax=ax, color="#f1f3f5", edgecolor="#adb5bd", linewidth=0.3)
+    merged = regions.merge(values, left_on="NUTS_ID", right_on=key, how="inner")
+    merged.plot(
+        ax=ax,
+        column="macro_f1",
+        cmap="viridis",
+        legend=True,
+        edgecolor="white",
+        linewidth=0.2,
+        legend_kwds={"shrink": 0.6, "label": "Macro F1"},
+    )
+    minx, miny, maxx, maxy = merged.total_bounds
+    ax.set_xlim(minx - 1e5, maxx + 1e5)
+    ax.set_ylim(miny - 1e5, maxy + 1e5)
+    ax.set_axis_off()
+    ax.set_title(title, loc="left", fontsize=11)
+    fig.tight_layout()
+    fig.savefig(path)
+    plt.close(fig)
+
+
+def sensitivity_forest(summary: pd.DataFrame, path: Path) -> None:
+    """Estimate and 98.75% interval of each hypothesis in every sensitivity run."""
+    tests = ["H1", "H2", "H3a", "H3b"]
+    data = summary[summary["hypothesis"].isin(tests)]
+    runs = list(dict.fromkeys(data["run"]))
+    fig, axes = plt.subplots(
+        1, len(tests), figsize=(15, 0.22 * len(runs) + 1.8), dpi=150, sharey=True
+    )
+    y_of = {r: i for i, r in enumerate(runs[::-1])}
+    for ax, test in zip(axes, tests, strict=True):
+        d = data[data["hypothesis"] == test]
+        for row in d.itertuples(index=False):
+            colour = DECISION_COLOURS.get(row.decision, INK)
+            y = y_of[row.run]
+            ax.plot(
+                [row.decision_ci_low, row.decision_ci_high], [y, y], color=colour, linewidth=1.5
+            )
+            ax.plot(row.estimate, y, "o", color=colour, ms=3)
+        sesoi = 0.02
+        ax.axvline(0, color=INK, linewidth=0.7)
+        for x in (-sesoi, sesoi):
+            ax.axvline(x, color=INK, linestyle=":", linewidth=0.7)
+        ax.set_title(test, loc="left", fontsize=10)
+        ax.tick_params(labelsize=7)
+        ax.spines[["top", "right"]].set_visible(False)
+    axes[0].set_yticks(list(y_of.values()))
+    axes[0].set_yticklabels(list(y_of.keys()), fontsize=6.5)
+    fig.supxlabel("Difference in macro F1 (98.75% interval; colour = decision)", fontsize=9)
+    fig.tight_layout()
+    fig.savefig(path)
+    plt.close(fig)
