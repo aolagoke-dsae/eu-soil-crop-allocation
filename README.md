@@ -8,11 +8,15 @@ A pre-registered predictive study on 9,906 agricultural points of the EU's LUCAS
 2018 topsoil survey: the crop group recorded in the field, laboratory-measured
 soil chemistry and texture, and climate and terrain at each point.
 
-> **Status.** Phases 0 to 5 of the [analysis protocol](docs/PROTOCOL.md) are
-> complete: data audit, sealed split, exploratory analysis, model selection,
-> hypothesis tests, interpretation and 61 sensitivity runs. The results below
-> are cross-validated on the training points. The sealed test set (1,981 points)
-> has not been scored yet; its single score will be added here in Phase 6.
+> **Status.** Phases 0 to 6 of the [analysis protocol](docs/PROTOCOL.md) are
+> run: data audit, sealed split, exploratory analysis, model selection,
+> hypothesis tests, interpretation, 61 sensitivity runs and the single score on
+> the sealed test set. On its 1,800 points with complete predictors the final
+> model reaches macro F1 0.433 (95% interval 0.399 to 0.459), against 0.437 in
+> cross-validation
+> ([`final_test_metrics.csv`](reports/tables/final_test_metrics.csv)). The
+> results below are cross-validated on the training points; the model card and
+> validation report are in preparation.
 
 ## Key findings
 
@@ -140,10 +144,12 @@ soil adds nothing (H1 +0.004).
 ```
 config/analysis.yaml   every fixed choice: filters, blocks, splits, budgets, seeds
 docs/PROTOCOL.md       the pre-registered protocol and its amendments
+docs/DATA_CARD.md      sources, sample flow, missing values and known biases
 src/eusoil/            the pipeline (python -m eusoil <command>)
 tests/                 unit tests on synthetic data; run in CI on Linux and Windows
 reports/tables/        aggregated results (no point-level soil data)
 reports/figures/       figures (soil values shown only as medians of 50 km cells)
+reports/run_log.csv    one row per command: commit, config hash, seed, package versions
 data/README.md         how to obtain each source; data/ itself is not committed
 ```
 
@@ -171,6 +177,44 @@ each finished fold and resume if interrupted.
 | 3. Model selection | `stage-a`, `stage-a-report` |
 | 4. Hypothesis tests | `stage-b-ladder`, `stage-b-validation`, `stage-b-report` |
 | 5. Interpretation and robustness | `interpret`, `sensitivity`, `sensitivity-report` |
+| 6. Final evaluation | `final-test` (scores the sealed test set once; refuses a second run) |
+
+## How this was built
+
+The code was written by an AI coding agent, Claude (Anthropic), under my
+direction. It drafted the pipeline (about 6,800 lines in `src/eusoil/`), the
+tests (about 1,800 lines) and the configuration, and helped draft the protocol,
+this README and the data card. I set the questions, the hypotheses and the
+validation design; decided every protocol choice and amendment; reviewed the
+code before each commit; ran every command on the real data on my own machine;
+and made every commit.
+
+The agent's drafts were not trusted to be right. Four checks sat outside them:
+
+- **The protocol came first.** It was committed before any model was fitted, and
+  every later change is a dated amendment with its reason (A1-A20). My review of
+  the first draft produced A11-A14: it had counted the confirmatory tests wrongly
+  (five, not seven), framed random-versus-spatial validation as a hypothesis that
+  assumed its own answer, and given H2 no decision threshold.
+- **Real-data runs failed loudly.** Running each phase on the LUCAS data caught a
+  crash and excessive memory use in the TerraClimate extraction and elevation
+  errors at the edges of DEM tiles, none of which the synthetic unit tests reach.
+- **Continuous integration** on Linux and Windows caught a formatting regression
+  from a late edit; the linter is now pinned to one version.
+- **Results were read, not accepted.** A README sentence that overstated H2 was
+  rewritten before release, and the permuted-label control, which looked like a
+  failure, was resolved only by defining its chance level, recorded as defined
+  after the result was seen (A19).
+
+Smaller errors were fixed in review: a stray index column in an audit table and
+a wrong configuration key for the decision threshold.
+
+An audit of the protocol against the code on 22 November 2026, just after the
+sealed test set was scored, found practices the protocol described but the agent
+had not built. A20 lists each one. Two were added: a run log in
+[`reports/run_log.csv`](reports/run_log.csv), so runs before that date have no
+log row, and a test that no point is on both sides of any split. The rest are
+corrected in the record. None of them changes a result.
 
 ## Related project
 

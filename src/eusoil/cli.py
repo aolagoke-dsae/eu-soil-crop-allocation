@@ -40,7 +40,8 @@ Phase 6:
 ``final-test``        the frozen model scored once on the sealed test set (refuses a second run)
 
 Each command reads the outputs of the earlier ones from ``data/interim`` and
-``data/processed``.
+``data/processed``, and appends one row to ``reports/run_log.csv`` (commit,
+configuration hash, seed, package versions, duration and outcome).
 """
 
 from __future__ import annotations
@@ -60,8 +61,9 @@ from eusoil.build import (
     build_points,
     write_tables,
 )
-from eusoil.config import load_config, resolve_paths
+from eusoil.config import DEFAULT_CONFIG, load_config, resolve_paths
 from eusoil.flow import SampleFlow
+from eusoil.runlog import RunLog, options_of
 
 LOG = logging.getLogger("eusoil")
 
@@ -1097,7 +1099,8 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    config = load_config(args.config)
+    config_path = Path(args.config) if args.config else DEFAULT_CONFIG
+    config = load_config(config_path)
     paths = resolve_paths(config)
     paths.ensure_output_dirs()
     commands = {
@@ -1122,7 +1125,16 @@ def main(argv: list[str] | None = None) -> None:
         "sensitivity-report": cmd_sensitivity_report,
         "final-test": cmd_final_test,
     }
-    commands[args.command](args, config, paths)
+    log = RunLog(
+        paths.reports / "run_log.csv",
+        paths.root,
+        args.command,
+        options_of(args),
+        config_path,
+        config,
+    )
+    with log:
+        commands[args.command](args, config, paths)
 
 
 if __name__ == "__main__":

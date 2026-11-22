@@ -433,6 +433,15 @@ NOT_RUN = [
         "reason": "Not available for scikit-learn forests or histogram boosting; the unweighted "
         "run covers the class-weighting question (amendment A18)",
     },
+    {
+        "run": "loco_prior_em",
+        "area": "Validation",
+        "description": "Leave-one-country-out with class priors re-estimated by EM "
+        "(Saerens et al., 2002)",
+        "reason": "Specified in the protocol but not built; found missing in the audit of "
+        "22 November 2026 (amendment A20). H3b is reported with the held-out country's own "
+        "class mix",
+    },
 ]
 
 
