@@ -63,6 +63,40 @@ def fit_final(
     return estimator.fit(train[_x_columns(columns)], train[TARGET].to_numpy())
 
 
+def resample_indices(
+    test: pd.DataFrame,
+    classes: list[str],
+    block_m: float,
+    n_boot: int,
+    rng: np.random.Generator,
+):
+    """Block-bootstrap resamples of the test points, as index arrays.
+
+    Yields one array per resample that holds every class, and ``None`` for one
+    that lacks a class (it cannot give per-class scores and is dropped). The
+    draws depend only on the coordinates, the labels and ``rng``, never on the
+    model, so the resamples can be rebuilt without scoring the test set again.
+    """
+    blocks = block_ids(test["easting"].to_numpy(), test["northing"].to_numpy(), block_m)
+    members = [np.flatnonzero(blocks == b) for b in np.unique(blocks)]
+    y = test[TARGET].to_numpy()
+    for _ in range(n_boot):
+        draw = rng.integers(0, len(members), len(members))
+        index = np.concatenate([members[i] for i in draw])
+        yield index if len(set(y[index])) == len(classes) else None
+
+
+def count_usable_resamples(
+    test: pd.DataFrame,
+    classes: list[str],
+    block_m: float,
+    n_boot: int,
+    rng: np.random.Generator,
+) -> int:
+    """How many of ``n_boot`` resamples hold every class (see ``resample_indices``)."""
+    return sum(i is not None for i in resample_indices(test, classes, block_m, n_boot, rng))
+
+
 def bootstrap_metrics(
     test: pd.DataFrame,
     proba: np.ndarray,
@@ -72,16 +106,12 @@ def bootstrap_metrics(
     rng: np.random.Generator,
 ) -> pd.DataFrame:
     """Metrics on block-bootstrap resamples of the test points (one row per resample)."""
-    blocks = block_ids(test["easting"].to_numpy(), test["northing"].to_numpy(), block_m)
-    members = [np.flatnonzero(blocks == b) for b in np.unique(blocks)]
     y = test[TARGET].to_numpy()
-    rows = []
-    for _ in range(n_boot):
-        draw = rng.integers(0, len(members), len(members))
-        index = np.concatenate([members[i] for i in draw])
-        if len(set(y[index])) < len(classes):  # every class needed for per-class scores
-            continue
-        rows.append(evaluate(y[index], proba[index], classes))
+    rows = [
+        evaluate(y[index], proba[index], classes)
+        for index in resample_indices(test, classes, block_m, n_boot, rng)
+        if index is not None
+    ]
     return pd.DataFrame(rows)
 
 

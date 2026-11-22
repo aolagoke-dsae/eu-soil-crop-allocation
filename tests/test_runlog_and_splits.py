@@ -163,7 +163,7 @@ def test_real_knndm_folds_never_put_a_sealed_point_in_training_or_evaluation():
         assert out.loc[out[column].notna(), column].nunique() == settings["k_outer"]
 
 
-def test_git_state_counts_a_new_source_file_as_dirty(tmp_path):
+def test_git_state_marks_code_changes_dirty_and_regenerated_outputs_clean(tmp_path):
     import subprocess
 
     from eusoil.runlog import git_state
@@ -180,6 +180,15 @@ def test_git_state_counts_a_new_source_file_as_dirty(tmp_path):
     assert git_state(tmp_path)[1] == "no"
     (tmp_path / "notes.txt").write_text("scratch")  # untracked outside code: still clean
     assert git_state(tmp_path)[1] == "no"
+    (tmp_path / "reports").mkdir()
+    (tmp_path / "reports" / "table.csv").write_text("a\n1\n")
+    git("add", "reports/table.csv")
+    git("commit", "-q", "-m", "table")
+    (tmp_path / "reports" / "table.csv").write_text("a\n2\n")  # a regenerated output
+    assert git_state(tmp_path)[1] == "no"
+    (tmp_path / "README.md").write_text("changed")  # a tracked file outside the outputs
+    assert git_state(tmp_path)[1] == "yes"
+    git("checkout", "--", "README.md")
     (tmp_path / "src").mkdir()
     (tmp_path / "src" / "new.py").write_text("x = 1")
     assert git_state(tmp_path)[1] == "yes"

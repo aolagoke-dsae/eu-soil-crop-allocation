@@ -7,7 +7,7 @@ Dr. Adewole Olagoke · 22 November 2026
 Reported along the TRIPOD+AI checklist (Collins et al., 2024) for the
 development and validation of a prediction model, adapted to points rather
 than patients. Methods were fixed in a dated [protocol](PROTOCOL.md) before
-any model was fitted; amendments A1-A21 record every later change. The final
+any model was fitted; amendments A1-A22 record every later change. The final
 model is described in the [model card](MODEL_CARD.md) and the data in the
 [data card](DATA_CARD.md). Every number below is in
 [`reports/tables/`](../reports/tables/).
@@ -96,7 +96,8 @@ of step 5 and 0.060 for the test score, with the 175 km blocks the variograms
 later set (the simulation used smaller blocks and synthetic labels). The
 decisions rest on paired differences, whose 98.75% intervals are 0.009 (H3a),
 0.022 (H2), 0.025 (H1) and 0.056 (H3b) wide, narrow enough to resolve the 0.02
-threshold for H1, H2 and H3a.
+threshold for H1 and H3a. H2's interval spans −0.02, so its reversal rests on
+the point estimate (−0.023), 0.003 beyond the threshold.
 
 ### Splits
 
@@ -113,8 +114,9 @@ threshold for H1, H2 and H3a.
   is therefore a random 20% of the points, and the test score measures
   prediction between sample points. Spatial transfer is measured by the block
   and leave-one-country-out schemes (E1, H3b).
-- **Cross-validation.** Five-fold kNNDM, repeated three times, on the 7,925
-  training points; four inner folds for tuning.
+- **Cross-validation.** Five-fold kNNDM, repeated three times, assigned on the
+  7,925 training points; the models use the 7,252 with every predictor. Four
+  inner folds for tuning.
 - **Other schemes (E1, H3b).** Random folds, square blocks of 25, 50, 100 and
   200 km, and leave-one-country-out.
 
@@ -129,8 +131,8 @@ within one standard error of the best mean macro F1 was selected.
 ### Hypothesis tests
 
 The predictor ladder adds one block at a time (G; + C; + S_inh or S_nut;
-both; + K). Each hypothesis compares two ladder steps fitted on identical
-folds. Differences are tested with a paired spatial block bootstrap (175 km
+both; + K). H1, H2 and H3a each compare two ladder steps fitted on identical
+folds; H3b compares step 5 under kNNDM and under leave-one-country-out. Differences are tested with a paired spatial block bootstrap (175 km
 blocks, set from the variogram range; 2,000 resamples). A hypothesis is
 **supported** if its 98.75% interval's lower bound is above 0 and the estimate
 at least 0.02, **negligible** if the interval's upper bound is below 0.02 (for H2, the
@@ -172,7 +174,8 @@ added noise predictor (should carry no importance).
 | Sealed test | 1,981 | 1,800 (181 dropped) |
 
 The test set holds every crop group and every country; its class mix matches
-the training set within 1.5 percentage points for every group
+the training set within 1.5 percentage points for every group (other cereals
+1.50)
 ([`split_seal_by_crop_group.csv`](../reports/tables/split_seal_by_crop_group.csv)).
 
 ### Model selection
@@ -261,8 +264,11 @@ between sample points, not transfer. Six of eight groups score slightly lower
 on the test set than in cross-validation, by 0.009 to 0.053; olive groves score
 0.010 higher, and vineyards and orchards 0.134 higher (0.581 against 0.447),
 with a wide interval (0.459 to 0.671). Bootstrap resamples that lacked a crop
-group were dropped before the intervals were taken; their number was not
-recorded.
+group were dropped before the intervals were taken. Their number was not saved
+by the scoring run; it is rebuilt without a model by `final-test-bootstrap`
+([`final_test_bootstrap.csv`](../reports/tables/final_test_bootstrap.csv), A22).
+The tabled estimates are the full-sample differences; the bootstrap medians the
+protocol names differ by at most 0.002 and change no decision.
 Per-class results, the confusion matrix and results by country are in the
 [model card](MODEL_CARD.md) and
 [`final_test_*.csv`](../reports/tables/final_test_metrics.csv).

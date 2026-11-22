@@ -2,11 +2,12 @@
 
 Each row records what is needed to tie a results table to the code and
 settings that produced it: the command and its options, the SHA-256 of the
-configuration file, the git commit and whether the working tree had
-uncommitted changes, the seed, the Python version and the versions of the
-packages the results depend on, the start time, the duration and how the run
-ended. Nothing about the data or the machine's paths is written, so the log
-can be committed with the tables.
+configuration file, the git commit and whether the tree was dirty (a tracked
+file changed outside ``reports/`` and ``data/``, or a new file in ``src/``,
+``config/`` or ``tests/``; regenerated outputs do not count), the seed, the
+Python version and the versions of the packages the results depend on, the
+start time, the duration and how the run ended. Nothing about the data or the
+machine's paths is written, so the log can be committed with the tables.
 """
 
 from __future__ import annotations
@@ -33,6 +34,7 @@ PACKAGES = (
     "geopandas",
 )
 CODE_DIRS = ("src", "config", "tests")
+OUTPUT_DIRS = ("reports", "data")
 FIELDS = (
     "started_utc",
     "command",
@@ -63,8 +65,11 @@ def git_state(root: Path) -> tuple[str, str]:
 
     try:
         commit = run("rev-parse", "HEAD")
-        # Dirty: any change to a tracked file, or a new file where code and settings live.
-        tracked = run("status", "--porcelain", "--untracked-files=no")
+        # Dirty: a changed tracked file outside the outputs, or a new file where
+        # code and settings live. Regenerated outputs (reports/, data/) do not
+        # count, so a run made between two reruns is not marked dirty.
+        excluded = [f":(exclude){d}" for d in OUTPUT_DIRS]
+        tracked = run("status", "--porcelain", "--untracked-files=no", "--", ".", *excluded)
         untracked = run("status", "--porcelain", "--untracked-files=all", "--", *CODE_DIRS)
         dirty = "yes" if tracked or untracked else "no"
     except (OSError, subprocess.SubprocessError):

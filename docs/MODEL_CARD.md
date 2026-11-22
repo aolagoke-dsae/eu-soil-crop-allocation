@@ -14,7 +14,7 @@ the [data card](DATA_CARD.md); every choice was fixed in advance in the
 | | |
 |---|---|
 | Task | Eight-class classification of the crop group at a point |
-| Model | Random forest (scikit-learn 1.9.1), inverse-frequency class weights |
+| Model | Random forest (scikit-learn; the final run's version was not recorded, later logged runs use 1.9.1), inverse-frequency class weights |
 | Training data | 7,252 LUCAS 2018 farmland points with every predictor, in 27 countries: 26 EU member states (all but Malta) and the UK |
 | Score on the sealed test set | **Macro F1 0.433** (95% interval 0.399 to 0.459), 1,800 points |
 | Cross-validated estimate | Macro F1 0.437 (kNNDM folds, which here are random folds) |
@@ -98,7 +98,9 @@ do, kNNDM chose random assignment: the test set is a random 20% of the points,
 and its score describes prediction between sample points, not transfer to new
 areas (for that, see Out of scope). Intervals are 95% spatial block-bootstrap
 intervals (175 km blocks, 2,000 resamples; resamples lacking a crop group were
-dropped, and their number was not recorded). The cross-validated column is the
+dropped; their number is rebuilt in
+[`final_test_bootstrap.csv`](../reports/tables/final_test_bootstrap.csv), A22).
+The cross-validated column is the
 final configuration under the same kNNDM folds.
 
 | Metric | Test | 95% interval | Cross-validated |
@@ -174,7 +176,7 @@ single predictors are moderately stable across folds (Kendall's τ 0.65).
 - **Errors cluster in space.** Moran's I of the errors is 0.14, so neighbouring
   points tend to be wrong together; this is why intervals use spatial blocks.
 - **Complete cases.** Missing texture clusters by country (83% of points in
-  Luxembourg, 43% in Croatia, about a third in Ireland and the UK), so these
+  Luxembourg, 43% in Croatia, about 30% in Ireland and the UK), so these
   countries are under-represented in training and test.
 - **No reproducibility log for the final fit.** The run log was added after the
   test set was scored (amendment A20); the final run is tied to commit

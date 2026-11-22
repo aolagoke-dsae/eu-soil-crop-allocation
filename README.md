@@ -25,9 +25,15 @@ soil chemistry and texture, and climate and terrain at each point.
 | | Question | Estimate (macro F1) | Decision |
 |---|---|---|---|
 | **H1** | Do laboratory soil data add to climate and location? | **+0.049** (98.75% interval 0.037 to 0.061) | Supported; robust in all 59 sensitivity runs |
-| **H2** | Do inherent soil properties add more than nutrients? | **−0.023** (−0.035 to −0.013) | Reversed on the primary analysis: nutrients add more. Not established: the protocol requires the conclusion to hold with organic carbon in either soil block, and with it in the inherent block the gap is negligible |
+| **H2** | Do inherent soil properties add more than nutrients? | **−0.023** (−0.035 to −0.013) | Reversed on the primary analysis: nutrients add more, though the interval spans −0.02. Not established: the protocol requires the conclusion to hold with organic carbon in either soil block, and with it in the inherent block the gap is negligible |
 | **H3a** | Does country add anything beyond climate, location and soil? | +0.001 (−0.004 to 0.005) | Negligible |
 | **H3b** | Does the model transfer to a country it has not seen? | **+0.126** (0.096 to 0.152; within-country minus unseen-country macro F1) | Supported: transfer is much harder than mapping within the surveyed countries |
+
+Sources: [`stage_b_decisions.csv`](reports/tables/stage_b_decisions.csv),
+[`sensitivity_robustness.csv`](reports/tables/sensitivity_robustness.csv),
+[`stage_b_ladder.csv`](reports/tables/stage_b_ladder.csv),
+[`stage_b_e1_curve.csv`](reports/tables/stage_b_e1_curve.csv). The numbers in
+this README are written by hand from those tables (A22).
 
 - **Soil data help, modestly.** Macro F1 rises from 0.388 (climate and location)
   to 0.437 (plus soil), against 0.371 for k-nearest neighbours on coordinates
@@ -37,7 +43,7 @@ soil chemistry and texture, and climate and terrain at each point.
 - **Total N, which tracks organic carbon, is the soil variable the fitted
   model relies on most** (exploratory; permutation drop 0.056, ahead of K and
   P), and it moves almost one-for-one with organic carbon (Spearman
-  ρ = 0.94; median organic carbon over median N is 8.6 to 10 in every crop group). The
+  ρ = 0.94; median organic carbon over median N is 8.7 to 10 in every crop group). The
   fitted model relies on the nutrient block most for permanent grassland. When organic carbon is added to the
   inherent block, the gap between the blocks disappears (−0.004, negligible).
   The protocol's pre-registered reading of a reversed H2 is that it "would point
@@ -110,7 +116,7 @@ budgets in nested cross-validation (macro F1 0.440, against 0.433 for boosting).
 
 **Pre-registration.** The protocol, with its hypotheses, estimands and decision
 rules, was committed before modelling. Every later change is a dated amendment
-(A1-A21) in the protocol, including the ones made after a pipeline check.
+(A1-A22) in the protocol, including the ones made after a pipeline check.
 
 ## Robustness
 
@@ -218,7 +224,7 @@ and made every commit.
 The agent's drafts were not trusted to be right. Four checks sat outside them:
 
 - **The protocol came first.** It was committed before any model was fitted, and
-  every later change is a dated amendment with its reason (A1-A21). My review of
+  every later change is a dated amendment with its reason (A1-A22). My review of
   the first draft produced A11-A14: it had counted the confirmatory tests wrongly
   (five instead of seven), framed random-versus-spatial validation as a hypothesis that
   assumed its own answer, and given H2 no decision threshold.
@@ -242,14 +248,17 @@ had not built. A20 lists each one. Two were added: a run log in
 log row, and a test that no point is on both sides of any split. The rest are
 corrected in the record. None of them changes a result.
 
-A read-through of the write-up the same evening, by a separate AI reviewer
-given only the repository and asked to act as a sceptical referee, found what
-the drafting had missed: H3b reported with the wrong sign, block importance
+Three read-throughs of the write-up the same evening, each by a fresh AI
+reviewer given only the repository and asked to act as a sceptical referee,
+found what the drafting had missed. The first found H3b reported with the wrong sign, block importance
 described as refitting when it is permutation, two comparisons that mixed
 different measures, a post-hoc reading of H2 stated as a finding, the fact
 that kNNDM had chosen random folds left unsaid, and ALE tables that published
-the minimum and maximum of pH, P and K, each a single point's value. A21
-records each correction.
+the minimum and maximum of pH, P and K, each a single point's value. The
+second found the same extremes in two EDA figures, an untested claim that the
+model suits regional shares, and wrongly attributed commits; the third found
+claims about the documents themselves that were not true. A21 and A22 record
+each correction.
 
 ## Related project
 
@@ -276,7 +285,10 @@ internal resolution check: its licence does not allow redistribution, so no
 value derived from it is published here. Elevation: Copernicus DEM GLO-90
 © DLR e.V. 2010-2014 and © Airbus Defence and Space GmbH 2014-2018, provided
 under COPERNICUS by the European Union and ESA. Boundaries: © EuroGeographics
-for the administrative boundaries (GISCO NUTS 2016).
+for the administrative boundaries (GISCO NUTS 2016). WorldClim: Fick, S. E. &
+Hijmans, R. J. (2017). WorldClim 2: new 1-km spatial resolution climate surfaces
+for global land areas. *International Journal of Climatology*, 37(12),
+4302-4315.
 
 ## Author
 

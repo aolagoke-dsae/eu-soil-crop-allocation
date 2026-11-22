@@ -970,11 +970,63 @@ def cmd_sensitivity_report(args, config, paths) -> None:
         )
 
 
+def _sealed_test_points(paths, config, columns):
+    """The sealed points with every predictor, after checking the seal."""
+    from eusoil.final import SealBroken, check_seal
+
+    tables = paths.reports / "tables"
+    splits = pd.read_parquet(_splits_path(paths))
+    try:
+        check_seal(splits, pd.read_csv(tables / "split_seal.csv").loc[0, "sha256_test_ids"])
+    except SealBroken as error:
+        sys.exit(str(error))
+    table = pd.read_parquet(paths.processed / "modelling_table.parquet").merge(
+        splits[["point_id", "sealed_test"]], on="point_id", validate="one_to_one"
+    )
+    sealed = table[table["sealed_test"]]
+    return sealed, sealed[sealed[columns].notna().all(axis=1)].reset_index(drop=True)
+
+
+def cmd_final_test_bootstrap(args, config, paths) -> None:
+    """Rebuild the count of usable test-bootstrap resamples (amendment A22).
+
+    The run of 22 November 2026 dropped resamples lacking a crop group without
+    saving their number. The resamples depend only on the test points'
+    coordinates and labels and on the seed, so they are drawn again here; no
+    model is fitted or loaded and nothing is scored.
+    """
+    from eusoil.final import count_usable_resamples
+    from eusoil.models import predictor_columns
+    from eusoil.stage_b import LADDER
+
+    tables = paths.reports / "tables"
+    out = tables / "final_test_bootstrap.csv"
+    if not (tables / "final_test_metrics.csv").exists():
+        sys.exit("final_test_metrics.csv not found: run final-test first")
+    if out.exists():
+        sys.exit(f"{out} exists: the count is already recorded")
+    _, classes, block_km = _stage_b_common(paths, config)
+    step, _ = _final_configuration(paths)
+    _, test = _sealed_test_points(paths, config, predictor_columns(config, LADDER[step]))
+    n_boot = int(config["stage_b"]["n_bootstrap"])
+    used = count_usable_resamples(
+        test,
+        classes,
+        block_km * 1000.0,
+        n_boot,
+        np.random.default_rng(int(config["seed"]) + 20_000),
+    )
+    pd.DataFrame(
+        [{"n_bootstrap": n_boot, "n_bootstrap_used": used, "n_test_points": len(test)}]
+    ).to_csv(out, index=False)
+    LOG.info("test bootstrap: %d of %d resamples hold every crop group", used, n_boot)
+
+
 def cmd_final_test(args, config, paths) -> None:
     import joblib
 
     from eusoil import figures
-    from eusoil.final import SealBroken, check_seal, fit_final, score_test
+    from eusoil.final import fit_final, score_test
     from eusoil.models import evaluate, predictor_columns
     from eusoil.stage_b import LADDER, load_predictions
 
@@ -992,16 +1044,7 @@ def cmd_final_test(args, config, paths) -> None:
     step, params = _final_configuration(paths)
     columns = predictor_columns(config, LADDER[step])
 
-    splits = pd.read_parquet(_splits_path(paths))
-    try:
-        check_seal(splits, pd.read_csv(tables / "split_seal.csv").loc[0, "sha256_test_ids"])
-    except SealBroken as error:
-        sys.exit(str(error))
-    table = pd.read_parquet(paths.processed / "modelling_table.parquet").merge(
-        splits[["point_id", "sealed_test"]], on="point_id", validate="one_to_one"
-    )
-    sealed = table[table["sealed_test"]]
-    test = sealed[sealed[columns].notna().all(axis=1)].reset_index(drop=True)
+    sealed, test = _sealed_test_points(paths, config, columns)
     if set(data["point_id"]) & set(sealed["point_id"]):
         sys.exit("training data contain sealed test points; refusing to fit")
     LOG.info(
@@ -1041,7 +1084,9 @@ def cmd_final_test(args, config, paths) -> None:
     out["confusion"].to_csv(tables / "final_test_confusion_normalised.csv")
     out["by_country"].to_csv(tables / "final_test_by_country.csv", index=False)
     out["calibration"].to_csv(tables / "final_test_calibration.csv", index=False)
-    out["n_bootstrap_used"].to_csv(tables / "final_test_bootstrap.csv", index=False)
+    used = out["n_bootstrap_used"]
+    used.insert(0, "n_bootstrap", int(config["stage_b"]["n_bootstrap"]))
+    used.to_csv(tables / "final_test_bootstrap.csv", index=False)
     figures.final_test_plot(metrics, figs / "final_test.png")
     figures.confusion_heatmap(out["confusion"], figs / "final_test_confusion.png")
     row = metrics.set_index("metric").loc["macro_f1"]
@@ -1097,6 +1142,10 @@ def main(argv: list[str] | None = None) -> None:
         "final-test", help="Phase 6: score the frozen model once on the sealed test set"
     )
     p.add_argument("--n-jobs", type=int, default=-1, help="parallel jobs for the final fit")
+    sub.add_parser(
+        "final-test-bootstrap",
+        help="Phase 6: rebuild the count of usable test-bootstrap resamples (no scoring)",
+    )
     args = parser.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -1125,6 +1174,7 @@ def main(argv: list[str] | None = None) -> None:
         "sensitivity": cmd_sensitivity,
         "sensitivity-report": cmd_sensitivity_report,
         "final-test": cmd_final_test,
+        "final-test-bootstrap": cmd_final_test_bootstrap,
     }
     log = RunLog(
         paths.reports / "run_log.csv",

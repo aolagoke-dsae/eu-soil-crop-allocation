@@ -103,7 +103,8 @@ value. Until 22 November 2026 the ALE tables published them for pH, P and K,
 and the EDA histograms and violins drew them; all now stop at the 1st and 99th
 percentiles (A21). Model scores by country are published for every country,
 including four with fewer than 10 test points; they are not soil values, and
-countries under 30 points are marked as not interpretable.
+the model card notes that countries under 30 points are not interpretable.
+`interpret_macro_f1_by_country.csv` omits countries under 10 points (A22).
 
 ## References
 

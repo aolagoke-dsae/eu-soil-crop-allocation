@@ -72,3 +72,16 @@ def test_country_prior_baseline_reflects_each_countrys_crop_mix():
         {"country": country, "crop_group": labels, "outer_fold_s1": rng.integers(0, 5, n)}
     )
     assert country_prior_baseline(frame, config) > 0.6  # far above 1/3: country alone predicts well
+
+
+def test_usable_resample_count_matches_the_scoring_bootstrap_without_a_model():
+    """The count rebuilt from labels and seed equals the rows the scoring bootstrap keeps."""
+    from eusoil.final import bootstrap_metrics, count_usable_resamples
+
+    test = _points(120, 5)  # few points and large blocks: some resamples lack a class
+    rng_proba = np.random.default_rng(6)
+    proba = rng_proba.dirichlet(np.ones(len(CLASSES)), len(test))
+    draws = bootstrap_metrics(test, proba, CLASSES, 200_000.0, 300, np.random.default_rng(9))
+    count = count_usable_resamples(test, CLASSES, 200_000.0, 300, np.random.default_rng(9))
+    assert count == len(draws)
+    assert 0 < count < 300
