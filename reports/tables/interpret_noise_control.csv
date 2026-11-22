@@ -1,0 +1,2 @@
+group,n_folds,drop_macro_f1,drop_macro_f1_lo,drop_macro_f1_hi
+noise_control,5,0.0023475784406147516,0.0003132462856693624,0.00438191059556014

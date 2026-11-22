@@ -1,0 +1,5 @@
+hypothesis,reference_decision,n_runs,n_disagree,disagreeing_runs,verdict
+H1,supported,59,0,,robust
+H2,reversed,59,7,pure_labels=inconclusive;blocks_25km=inconclusive;blocks_50km=inconclusive;germany_only=inconclusive;without_IE=inconclusive;oc_in_inh=negligible;ph_h2o=inconclusive,fragile
+H3a,negligible,59,1,germany_only=inconclusive,mostly robust
+H3b,supported,26,0,,robust

@@ -1,0 +1,3 @@
+run,area,description,reason
+buffered_loo,Validation,Buffered leave-one-out (training points within the variogram range excluded),"With a 160 km range, removing every training point within range of a test point removes most of Europe's training data for each point; the 200 km block run tests the same question (amendment A18)"
+focal_loss,Model,Focal-loss variant,Not available for scikit-learn forests or histogram boosting; the unweighted run covers the class-weighting question (amendment A18)
