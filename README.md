@@ -15,8 +15,10 @@ soil chemistry and texture, and climate and terrain at each point.
 > model reaches macro F1 0.433 (95% interval 0.399 to 0.459), against 0.437 in
 > cross-validation
 > ([`final_test_metrics.csv`](reports/tables/final_test_metrics.csv)). The
-> results below are cross-validated on the training points; the model card and
-> validation report are in preparation.
+> results below are cross-validated on the training points. The
+> [model card](docs/MODEL_CARD.md) and the
+> [validation report](docs/VALIDATION_REPORT.md), written along TRIPOD+AI, give
+> the test results in full.
 
 ## Key findings
 
@@ -145,6 +147,8 @@ soil adds nothing (H1 +0.004).
 config/analysis.yaml   every fixed choice: filters, blocks, splits, budgets, seeds
 docs/PROTOCOL.md       the pre-registered protocol and its amendments
 docs/DATA_CARD.md      sources, sample flow, missing values and known biases
+docs/MODEL_CARD.md     the final model: intended use, test scores, calibration, limits
+docs/VALIDATION_REPORT.md  the full study along TRIPOD+AI, built around the test score
 src/eusoil/            the pipeline (python -m eusoil <command>)
 tests/                 unit tests on synthetic data; run in CI on Linux and Windows
 reports/tables/        aggregated results (no point-level soil data)

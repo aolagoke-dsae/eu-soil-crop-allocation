@@ -469,7 +469,7 @@ Work proceeds in gated phases. A phase starts only when the one before it is tic
 
 **Phase 6: final evaluation and write-up**
 
-- [ ] Score the frozen model once on the sealed test set
+- [x] Score the frozen model once on the sealed test set
 - [ ] Data card, model card, README generated from results; independent read-through before publishing
 
 **Phase 7: dashboards (gate: Phase 6 results frozen; every dashboard number matches the README)**
