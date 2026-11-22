@@ -98,8 +98,8 @@ do, kNNDM chose random assignment: the test set is a random 20% of the points,
 and its score describes prediction between sample points, not transfer to new
 areas (for that, see Out of scope). Intervals are 95% spatial block-bootstrap
 intervals (175 km blocks, 2,000 resamples; resamples lacking a crop group were
-dropped; their number is rebuilt in
-[`final_test_bootstrap.csv`](../reports/tables/final_test_bootstrap.csv), A22).
+dropped, but all 2,000 held every group, so none was
+([`final_test_bootstrap.csv`](../reports/tables/final_test_bootstrap.csv), A22).
 The cross-validated column is the
 final configuration under the same kNNDM folds.
 

@@ -264,8 +264,9 @@ between sample points, not transfer. Six of eight groups score slightly lower
 on the test set than in cross-validation, by 0.009 to 0.053; olive groves score
 0.010 higher, and vineyards and orchards 0.134 higher (0.581 against 0.447),
 with a wide interval (0.459 to 0.671). Bootstrap resamples that lacked a crop
-group were dropped before the intervals were taken. Their number was not saved
-by the scoring run; it is rebuilt without a model by `final-test-bootstrap`
+group would have been dropped before the intervals were taken. The scoring
+run did not save their number; rebuilt without a model by `final-test-bootstrap`,
+it is zero: all 2,000 resamples hold every group
 ([`final_test_bootstrap.csv`](../reports/tables/final_test_bootstrap.csv), A22).
 The tabled estimates are the full-sample differences; the bootstrap medians the
 protocol names differ by at most 0.002 and change no decision.
