@@ -111,33 +111,59 @@ def _label(name: str) -> str:
     return name.replace("_", " ")
 
 
+# Distribution figures are drawn between these quantiles: a minimum or maximum
+# is one identifiable point's value, which the disclosure rule keeps out (A21).
+INNER_QUANTILES = (0.01, 0.99)
+
+
+def inner_values(values: pd.Series | np.ndarray) -> np.ndarray:
+    """The values between the 1st and 99th percentiles (inclusive)."""
+    values = np.asarray(values, dtype=float)
+    values = values[~np.isnan(values)]
+    low, high = np.quantile(values, INNER_QUANTILES)
+    return values[(values >= low) & (values <= high)]
+
+
 def histograms(df: pd.DataFrame, columns: list[str], path: Path) -> None:
-    """One histogram per predictor, on the modelling (transformed) scale."""
+    """One histogram per predictor, on the modelling (transformed) scale.
+
+    Each panel spans the 1st to 99th percentile, so no single point's extreme
+    value is drawn; the title gives the full count.
+    """
     cols = 5
     rows = int(np.ceil(len(columns) / cols))
     fig, axes = plt.subplots(rows, cols, figsize=(13, 2.3 * rows), dpi=150, squeeze=False)
     for ax, column in zip(axes.flat, columns, strict=False):
         values = df[column].dropna()
-        ax.hist(values, bins=40, color=TARGET, alpha=0.85)
+        ax.hist(inner_values(values), bins=40, color=TARGET, alpha=0.85)
         ax.set_title(f"{column}  (n = {len(values):,})", fontsize=8, loc="left")
         ax.tick_params(labelsize=7)
         ax.spines[["top", "right"]].set_visible(False)
     for ax in list(axes.flat)[len(columns) :]:
         ax.axis("off")
-    fig.suptitle("Predictor distributions, training points", x=0.01, ha="left", fontsize=11)
+    fig.suptitle(
+        "Predictor distributions, training points (1st to 99th percentile)",
+        x=0.01,
+        ha="left",
+        fontsize=11,
+    )
     fig.tight_layout(rect=(0, 0, 1, 0.97))
     fig.savefig(path)
     plt.close(fig)
 
 
 def class_violins(df: pd.DataFrame, columns: list[str], path: Path) -> None:
-    """Per-crop-group violins for each predictor, groups ordered by their median."""
+    """Per-crop-group violins for each predictor, groups in alphabetical order.
+
+    Each violin is drawn from its group's 1st to 99th percentile, so its tips
+    are not single points' values.
+    """
     groups = sorted(df["crop_group"].unique())
     cols = 3
     rows = int(np.ceil(len(columns) / cols))
     fig, axes = plt.subplots(rows, cols, figsize=(13, 3.0 * rows), dpi=150, squeeze=False)
     for ax, column in zip(axes.flat, columns, strict=False):
-        data = [df.loc[df["crop_group"] == g, column].dropna().to_numpy() for g in groups]
+        data = [inner_values(df.loc[df["crop_group"] == g, column]) for g in groups]
         parts = ax.violinplot(data, showmedians=True, showextrema=False, widths=0.85)
         for body, colour in zip(parts["bodies"], GROUP_COLOURS, strict=False):
             body.set_facecolor(colour)
@@ -150,7 +176,12 @@ def class_violins(df: pd.DataFrame, columns: list[str], path: Path) -> None:
         ax.spines[["top", "right"]].set_visible(False)
     for ax in list(axes.flat)[len(columns) :]:
         ax.axis("off")
-    fig.suptitle("Predictors by crop group, training points", x=0.01, ha="left", fontsize=11)
+    fig.suptitle(
+        "Predictors by crop group, training points (1st to 99th percentile of each group)",
+        x=0.01,
+        ha="left",
+        fontsize=11,
+    )
     fig.tight_layout(rect=(0, 0, 1, 0.98))
     fig.savefig(path)
     plt.close(fig)

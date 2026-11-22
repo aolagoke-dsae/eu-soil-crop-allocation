@@ -11,7 +11,8 @@ and summarised over the 15 folds with a 95% t-interval:
 * permutation importance per variable (10 shuffles) and the stability of its
   ranking across folds (Kendall's tau);
 * accumulated local effects (ALE) of pH, P, K, annual precipitation and
-  annual mean temperature on each class's predicted probability;
+  annual mean temperature on each class's predicted probability, on quantile
+  bins between the 1st and 99th percentiles (never the minimum or maximum);
 * TreeSHAP mean absolute contributions on a subsample (exploratory);
 * a pure-noise variable added to a second fit as a negative control: its
   importance must be near zero.
@@ -88,6 +89,22 @@ def grouped_importance(
         }
         rows.append(row)
     return pd.DataFrame(rows)
+
+
+def ale_grid(values: pd.Series, n_bins: int, quantile_range: list[float]) -> np.ndarray:
+    """ALE bin edges: quantiles of the training data between two inner quantiles.
+
+    The edges are published with the curves, so they never include the
+    minimum or the maximum, each of which is one point's measured value
+    (protocol, disclosure control; amendment A21). Points beyond the outer
+    edges fall in the first or last bin.
+    """
+    low, high = quantile_range
+    if not 0.0 < low < high < 1.0:
+        raise ValueError(
+            f"ale_quantile_range must lie strictly inside (0, 1), got {quantile_range}"
+        )
+    return np.unique(np.quantile(values.dropna(), np.linspace(low, high, n_bins + 1)))
 
 
 def ale_curve(
@@ -186,8 +203,7 @@ def run_interpretation(
     data[NOISE] = rng.normal(size=len(data))
     ale_vars = settings["ale_variables"]
     grids = {
-        v: np.unique(np.quantile(data[v].dropna(), np.linspace(0, 1, settings["ale_bins"] + 1)))
-        for v in ale_vars
+        v: ale_grid(data[v], settings["ale_bins"], settings["ale_quantile_range"]) for v in ale_vars
     }
     grouped, single, ale, noise, shap_rows = [], [], [], [], []
     for repeat in range(1, config["split"]["outer_repeats"] + 1):

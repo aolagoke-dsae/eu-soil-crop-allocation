@@ -200,6 +200,7 @@ interpretation:
   n_repeats_single: 10                # shuffles per variable and fold (ranking stability)
   ale_variables: [ph_cacl2, p_log, k_log, tc9120_bio12, tc9120_bio1]
   ale_bins: 20                        # quantile bins of the training data
+  ale_quantile_range: [0.01, 0.99]    # outer bin edges; min and max are single points (A21)
   shap_sample: 300                    # points per fold (repeat 1) for TreeSHAP
   min_region_points: 10               # regional maps: regions with fewer points are hidden
   moran_k: 8

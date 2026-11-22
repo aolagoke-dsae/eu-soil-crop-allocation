@@ -442,6 +442,15 @@ NOT_RUN = [
         "22 November 2026 (amendment A20). H3b is reported with the held-out country's own "
         "class mix",
     },
+    {
+        "run": "missing_value_imputation",
+        "area": "Data",
+        "description": "Missing predictors (mainly clay and silt) imputed iteratively inside the "
+        "training folds instead of complete cases",
+        "reason": "Specified in the protocol (Data cleaning, missing values) but not built; found "
+        "missing in the read-through of 22 November 2026 (amendment A21). Complete cases drop "
+        "8.6% of points overall: 83% in LU, 43% in HR, about 30% in IE and the UK",
+    },
 ]
 
 

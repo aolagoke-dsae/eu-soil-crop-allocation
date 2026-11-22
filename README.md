@@ -10,7 +10,7 @@ soil chemistry and texture, and climate and terrain at each point.
 
 > **Status.** Phases 0 to 6 of the [analysis protocol](docs/PROTOCOL.md) are
 > run: data audit, sealed split, exploratory analysis, model selection,
-> hypothesis tests, interpretation, 61 sensitivity runs and the single score on
+> hypothesis tests, interpretation, 59 sensitivity runs and the single score on
 > the sealed test set. On its 1,800 points with complete predictors the final
 > model reaches macro F1 0.433 (95% interval 0.399 to 0.459), against 0.437 in
 > cross-validation
@@ -25,34 +25,41 @@ soil chemistry and texture, and climate and terrain at each point.
 | | Question | Estimate (macro F1) | Decision |
 |---|---|---|---|
 | **H1** | Do laboratory soil data add to climate and location? | **+0.049** (98.75% interval 0.037 to 0.061) | Supported; robust in all 59 sensitivity runs |
-| **H2** | Do inherent soil properties add more than nutrients? | **−0.023** (−0.035 to −0.013) | Reversed: nutrients add more. Sensitive to where organic carbon is assigned (see below) |
+| **H2** | Do inherent soil properties add more than nutrients? | **−0.023** (−0.035 to −0.013) | Reversed on the primary analysis: nutrients add more. Not established: the protocol requires the conclusion to hold with organic carbon in either soil block, and with it in the inherent block the gap is negligible |
 | **H3a** | Does country add anything beyond climate, location and soil? | +0.001 (−0.004 to 0.005) | Negligible |
-| **H3b** | Does the model transfer to a country it has not seen? | **−0.127** (loss; −0.152 to −0.096) | Supported: transfer is much harder than mapping within the surveyed countries |
+| **H3b** | Does the model transfer to a country it has not seen? | **+0.126** (0.096 to 0.152; within-country minus unseen-country macro F1) | Supported: transfer is much harder than mapping within the surveyed countries |
 
 - **Soil data help, modestly.** Macro F1 rises from 0.388 (climate and location)
-  to 0.437 (plus soil), against 0.371 for location alone and 0.054 for always
-  predicting the largest class. The gain is 2.5 times the smallest effect of
-  interest set in advance (0.02).
-- **The nutrient advantage is an organic-matter signal, not a fertiliser
-  signal.** The most important soil variable is total N, not P or K, and total N
-  moves almost one-for-one with organic carbon (Spearman ρ = 0.94; the C:N ratio
-  is about 9 in every crop group). The nutrient block helps most for permanent
-  grassland, whose soils hold the most organic matter. When organic carbon is
-  added to the inherent block, the gap between the blocks disappears (−0.004,
-  negligible). Organic matter itself reflects land use, so neither reading
-  identifies a cause.
-- **Climate carries most of the information**, especially for olive groves and
-  vineyards, then location, then nutrient soil, then inherent soil.
+  to 0.437 (plus soil), against 0.371 for k-nearest neighbours on coordinates
+  alone and 0.054 for always predicting the largest class. The gain is about 2.4
+  times the smallest effect of interest set in advance (0.02). Holm-adjusted
+  p-values: 0.004 for H1, H2 and H3b, 0.74 for H3a.
+- **Total N, which tracks organic carbon, is the soil variable the fitted
+  model relies on most** (exploratory; permutation drop 0.056, ahead of K and
+  P), and it moves almost one-for-one with organic carbon (Spearman
+  ρ = 0.94; median organic carbon over median N is 8.6 to 10 in every crop group). The
+  fitted model relies on the nutrient block most for permanent grassland. When organic carbon is added to the
+  inherent block, the gap between the blocks disappears (−0.004, negligible).
+  The protocol's pre-registered reading of a reversed H2 is that it "would point
+  to management, not soil type, as the soil signal"; organic matter reflects
+  both, so the data cannot separate them.
+- **The fitted model leans most on climate**, especially for olive groves and
+  vineyards, then location, then nutrient soil, then inherent soil (macro F1
+  lost when a block is shuffled: 0.157, 0.103, 0.083, 0.025). Climate and
+  location are largely interchangeable, though: added to location and terrain,
+  climate raises macro F1 by only 0.015, less than a third of what soil adds on
+  top of both (0.049).
 - **Performance depends on distance to the training data.** Mapping EU farmland
   between the sample points (median 10 km to the nearest sample) gives macro F1
   0.437; with 200 km blocks held out it falls to 0.389, and for an unseen
   country to 0.310. Spain loses most (0.45 to 0.20), although the other countries
-  cover 97.5% of its climate and soil conditions, so what fails to transfer is
-  more likely country-specific practice than environment.
-- **Eight crop groups are hard to separate.** Permanent grassland (F1 0.76) and
+  cover 97.5% of its climate and soil conditions, so what fails to transfer may
+  be country-specific practice rather than environment.
+- **Eight crop groups are hard to separate.** Permanent grassland (F1 0.75) and
   olive groves (0.61) are recognised well; fodder (0.20) and oilseeds and pulses
-  (0.29) are not. Wheat is confused with oilseeds and maize, olive groves with
-  vineyards, and errors cluster in space (Moran's I 0.14).
+  (0.30) are not (cross-validated, final configuration). Wheat is confused
+  with oilseeds and maize, olive groves with vineyards, and errors cluster in
+  space (Moran's I 0.14).
 
 ![Predictor-block ladder and hypothesis decisions](reports/figures/stage_b_ladder.png)
 
@@ -82,8 +89,12 @@ orchards (567) and olive groves (443).
 **Validation designed for the use case.** The model is meant to map unsampled
 farmland inside the EU. Folds are built with k-fold nearest-neighbour distance
 matching (kNNDM), so the distances between held-out and training points match
-those between EU farmland and the sample. A sealed test set of 1,981 points was
-fixed by kNNDM before any exploration; the SHA-256 hash of its point IDs is in
+those between EU farmland and the sample. Because unsampled farmland lies as
+close to the sample as random folds do (median 8.5 km against 8.9 km), kNNDM
+chose one point per cluster: the folds, and the sealed test set, are in effect
+random 20% splits. Spatial transfer is measured separately, with blocks of up to
+200 km and with each country held out (E1, H3b). A sealed test set of 1,981
+points was fixed by kNNDM before any exploration; the SHA-256 hash of its point IDs is in
 [`reports/tables/split_seal.csv`](reports/tables/split_seal.csv), committed
 before the exploratory analysis.
 
@@ -99,20 +110,26 @@ budgets in nested cross-validation (macro F1 0.440, against 0.433 for boosting).
 
 **Pre-registration.** The protocol, with its hypotheses, estimands and decision
 rules, was committed before modelling. Every later change is a dated amendment
-(A1-A18) in the protocol, including the ones made after a pipeline check.
+(A1-A21) in the protocol, including the ones made after a pipeline check.
 
 ## Robustness
 
-The decisions were repeated in 61 sensitivity runs: detection-limit handling,
-target definition, block sizes instead of kNNDM, sample restrictions, each
-country left out in turn, climate source and resolution, other algorithms,
-model seeds, survey reweighting and two negative controls
-([`reports/tables/sensitivity_summary.csv`](reports/tables/sensitivity_summary.csv)).
+The decisions were repeated in 59 sensitivity runs, beside a reference run
+under the same fixed settings: detection-limit handling, target definition,
+block sizes instead of kNNDM, sample restrictions, each country left out in
+turn, climate source and resolution, other algorithms, model seeds and survey
+reweighting. Two negative controls were run beside them. Four registered runs
+are not reported: buffered leave-one-out and focal loss by a decision made
+before Phase 5 (A18), class-prior re-estimation and missing-value imputation
+because they were never built (A20, A21). The five seed runs cover the ladder
+only, not H3b. Results:
+[`sensitivity_summary.csv`](reports/tables/sensitivity_summary.csv); runs not
+made: [`sensitivity_not_run.csv`](reports/tables/sensitivity_not_run.csv).
 
 | | Runs disagreeing with the primary decision | Verdict |
 |---|---|---|
 | H1 | 0 of 59 | Robust |
-| H2 | 7 of 59 (6 inconclusive at the threshold or in Germany alone; 1 negligible: organic carbon in the inherent block) | Fragile on the pre-set rule; the direction holds in 58 of 59 |
+| H2 | 7 of 59 (6 inconclusive at the threshold or in Germany alone; 1 negligible: organic carbon in the inherent block) | Fragile on the pre-set rule; the sign holds in 59 of 59 |
 | H3a | 1 of 59 (Germany only) | Mostly robust |
 | H3b | 0 of 26 | Robust |
 
@@ -132,9 +149,14 @@ soil adds nothing (H1 +0.004).
   management as well as soil type, so the results say what predicts crop
   allocation, not what drives farmers' choices.
 - **Texture from earlier surveys.** Clay and silt come from the 2009-2015
-  surveys at the same point, measured for 91% of the points.
-- **Calibration.** Class weighting shifts probability away from permanent
-  grassland (class-wise calibration error 0.06 after temperature scaling).
+  surveys at the same point, measured for 91% of the points. The rest are
+  dropped as complete cases, and the gaps cluster: texture is missing for 83%
+  of the points in Luxembourg, 43% in Croatia and about 30% in Ireland and the
+  UK, so these countries are under-represented.
+- **Calibration and shares.** Class weighting shifts probability away from
+  permanent grassland, the largest class (class-wise calibration error 0.064 on
+  the sealed test set), and biases predicted shares: olive groves are predicted
+  35% more often than they occur, wheat 15% less often.
   Decisions use predicted classes and are not affected; any map of probabilities
   should carry this caveat.
 - **The E1 plateau rule.** The pre-registered rule returns 25 km because macro F1
@@ -152,7 +174,7 @@ docs/VALIDATION_REPORT.md  the full study along TRIPOD+AI, built around the test
 src/eusoil/            the pipeline (python -m eusoil <command>)
 tests/                 unit tests on synthetic data; run in CI on Linux and Windows
 reports/tables/        aggregated results (no point-level soil data)
-reports/figures/       figures (soil values shown only as medians of 50 km cells)
+reports/figures/       figures (soil maps as medians of 50 km cells; distributions within the 1st-99th percentile)
 reports/run_log.csv    one row per command: commit, config hash, seed, package versions
 data/README.md         how to obtain each source; data/ itself is not committed
 ```
@@ -187,7 +209,7 @@ each finished fold and resume if interrupted.
 
 The code was written by an AI coding agent, Claude (Anthropic), under my
 direction. It drafted the pipeline (about 6,800 lines in `src/eusoil/`), the
-tests (about 1,800 lines) and the configuration, and helped draft the protocol,
+tests (about 1,900 lines) and the configuration, and helped draft the protocol,
 this README and the data card. I set the questions, the hypotheses and the
 validation design; decided every protocol choice and amendment; reviewed the
 code before each commit; ran every command on the real data on my own machine;
@@ -196,9 +218,9 @@ and made every commit.
 The agent's drafts were not trusted to be right. Four checks sat outside them:
 
 - **The protocol came first.** It was committed before any model was fitted, and
-  every later change is a dated amendment with its reason (A1-A20). My review of
+  every later change is a dated amendment with its reason (A1-A21). My review of
   the first draft produced A11-A14: it had counted the confirmatory tests wrongly
-  (five, not seven), framed random-versus-spatial validation as a hypothesis that
+  (five instead of seven), framed random-versus-spatial validation as a hypothesis that
   assumed its own answer, and given H2 no decision threshold.
 - **Real-data runs failed loudly.** Running each phase on the LUCAS data caught a
   crash and excessive memory use in the TerraClimate extraction and elevation
@@ -219,6 +241,15 @@ had not built. A20 lists each one. Two were added: a run log in
 [`reports/run_log.csv`](reports/run_log.csv), so runs before that date have no
 log row, and a test that no point is on both sides of any split. The rest are
 corrected in the record. None of them changes a result.
+
+A read-through of the write-up the same evening, by a separate AI reviewer
+given only the repository and asked to act as a sceptical referee, found what
+the drafting had missed: H3b reported with the wrong sign, block importance
+described as refitting when it is permutation, two comparisons that mixed
+different measures, a post-hoc reading of H2 stated as a finding, the fact
+that kNNDM had chosen random folds left unsaid, and ALE tables that published
+the minimum and maximum of pH, P and K, each a single point's value. A21
+records each correction.
 
 ## Related project
 

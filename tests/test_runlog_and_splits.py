@@ -82,7 +82,7 @@ def _data(n=600, seed=0):
 
 
 def test_every_scheme_partitions_the_points_and_keeps_groups_on_one_side():
-    """No point, block or country is on both the training and the evaluation side."""
+    """No point, block or country is on both sides (outer-fold columns synthetic here)."""
     config = load_config()
     data = _data()
     schemes = validation_schemes(data, config)
@@ -125,3 +125,61 @@ def test_run_fold_scores_exactly_the_held_out_fold():
         held_out = set(data.loc[data[column] == fold, "point_id"])
         assert set(predictions["point_id"]) == held_out
         assert record["n_train"] == len(data) - len(held_out)
+
+
+def test_real_knndm_folds_never_put_a_sealed_point_in_training_or_evaluation():
+    """Seal, then outer folds, with the project's own functions on clustered points."""
+    from eusoil.split import outer_folds, seal_test_set
+
+    rng = np.random.default_rng(7)
+    centres = rng.uniform(0, 1e6, (12, 2))
+    xy = np.concatenate([c + rng.normal(0, 2e4, (40, 2)) for c in centres])
+    points = pd.DataFrame(
+        {
+            "point_id": np.arange(len(xy)) + 5000,
+            "easting": xy[:, 0],
+            "northing": xy[:, 1],
+            "crop_group": np.tile(CLASSES, len(xy) // 3 + 1)[: len(xy)],
+            "country": np.repeat([f"C{i}" for i in range(12)], 40),
+        }
+    )
+    domain = rng.uniform(0, 1e6, (400, 2))  # far from many samples: clustered folds
+    settings = {
+        "k_seal": 5,
+        "max_seal_attempts": 5,
+        "k_outer": 5,
+        "outer_repeats": 2,
+        "n_candidates": 20,
+        "max_fold_share": 0.5,
+    }
+    splits, _, record = seal_test_set(points, domain, settings, seed=3)
+    out, _ = outer_folds(points, splits, domain, settings, seed=3)
+    sealed_ids = set(out.loc[out["sealed_test"], "point_id"])
+    assert record["n_test"] == len(sealed_ids) > 0
+    for column in ("outer_fold_s1", "outer_fold_s2"):
+        assigned = out.loc[out[column].notna(), "point_id"]
+        assert not sealed_ids & set(assigned)  # sealed points are in no fold, on either side
+        assert assigned.is_unique and len(assigned) == len(points) - len(sealed_ids)
+        assert out.loc[out[column].notna(), column].nunique() == settings["k_outer"]
+
+
+def test_git_state_counts_a_new_source_file_as_dirty(tmp_path):
+    import subprocess
+
+    from eusoil.runlog import git_state
+
+    def git(*args):
+        subprocess.run(["git", *args], cwd=tmp_path, check=True, capture_output=True)
+
+    git("init", "-q")
+    git("config", "user.email", "t@example.org")
+    git("config", "user.name", "t")
+    (tmp_path / "README.md").write_text("x")
+    git("add", "README.md")
+    git("commit", "-q", "-m", "init")
+    assert git_state(tmp_path)[1] == "no"
+    (tmp_path / "notes.txt").write_text("scratch")  # untracked outside code: still clean
+    assert git_state(tmp_path)[1] == "no"
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "new.py").write_text("x = 1")
+    assert git_state(tmp_path)[1] == "yes"

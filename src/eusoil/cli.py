@@ -1041,6 +1041,7 @@ def cmd_final_test(args, config, paths) -> None:
     out["confusion"].to_csv(tables / "final_test_confusion_normalised.csv")
     out["by_country"].to_csv(tables / "final_test_by_country.csv", index=False)
     out["calibration"].to_csv(tables / "final_test_calibration.csv", index=False)
+    out["n_bootstrap_used"].to_csv(tables / "final_test_bootstrap.csv", index=False)
     figures.final_test_plot(metrics, figs / "final_test.png")
     figures.confusion_heatmap(out["confusion"], figs / "final_test_confusion.png")
     row = metrics.set_index("metric").loc["macro_f1"]

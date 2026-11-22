@@ -62,7 +62,10 @@ excluded land-cover codes and their counts are in
 | Country | NUTS 0 code | 0 |
 
 Points with a missing predictor are dropped from the models (complete cases);
-the counts are reported with every result.
+the counts are reported with every result. Missing texture clusters by country:
+Luxembourg 83%, Croatia 43%, Ireland 32%, the UK 31%, Finland 23%, Germany 14%
+of points ([`audit_missing_by_country.csv`](../reports/tables/audit_missing_by_country.csv)),
+so these countries are under-represented in the models.
 
 ## Data quality and known biases
 
@@ -73,7 +76,7 @@ the counts are reported with every result.
   Three other treatments, including multiple imputation, leave every decision
   unchanged.
 - **Texture from earlier surveys.** Clay and silt were measured in 2009 (7,192
-  points), 2012 (713) or 2015 (1,150), not in 2018 (A4).
+  points), 2012 (713), 2015 (1,150) or, for one point, 2018 (A4).
 - **Coordinates.** 9,887 points use the field GPS position, 19 the planned
   position (A6); 9,904 were observed in the field within 100 m.
 - **Label certainty.** 7,564 points have the crop covering at least half of the
@@ -81,8 +84,8 @@ the counts are reported with every result.
   or H3b decision.
 - **Organic soils.** 160 points have more than 120 g/kg organic carbon; excluding
   them changes no decision.
-- **Uneven sampling.** Relative to its share of farmland (counted on the 2 km
-  LUCAS grid), Spain is sampled about 2.2 times and the Netherlands about 0.35
+- **Uneven sampling.** Relative to its share of all 2018 LUCAS farmland points
+  (the 2 km grid, sampled or not), Spain is sampled about 2.2 times and the Netherlands about 0.35
   times as densely as the EU average. Reweighting each country to its farmland
   share changes no decision.
 - **One season.** Each point records the 2018 crop only. Rotations mean the same
@@ -93,8 +96,14 @@ the counts are reported with every result.
 ## Disclosure control
 
 No point-level soil value leaves `data/`. Published outputs are counts, shares,
-quantiles, model scores, and maps of soil variables as medians of 50 km cells
-with at least 5 points, or of regions with at least 10 points (A15).
+inner quantiles, model scores, and maps of soil variables as medians of 50 km
+cells with at least 5 points (A15), or of regions with at least 10 points (A18).
+Minima and maxima are not published, since each is an identifiable point's
+value. Until 22 November 2026 the ALE tables published them for pH, P and K,
+and the EDA histograms and violins drew them; all now stop at the 1st and 99th
+percentiles (A21). Model scores by country are published for every country,
+including four with fewer than 10 test points; they are not soil values, and
+countries under 30 points are marked as not interpretable.
 
 ## References
 

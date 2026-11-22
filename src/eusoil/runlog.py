@@ -32,6 +32,7 @@ PACKAGES = (
     "pyproj",
     "geopandas",
 )
+CODE_DIRS = ("src", "config", "tests")
 FIELDS = (
     "started_utc",
     "command",
@@ -62,7 +63,10 @@ def git_state(root: Path) -> tuple[str, str]:
 
     try:
         commit = run("rev-parse", "HEAD")
-        dirty = "yes" if run("status", "--porcelain", "--untracked-files=no") else "no"
+        # Dirty: any change to a tracked file, or a new file where code and settings live.
+        tracked = run("status", "--porcelain", "--untracked-files=no")
+        untracked = run("status", "--porcelain", "--untracked-files=all", "--", *CODE_DIRS)
+        dirty = "yes" if tracked or untracked else "no"
     except (OSError, subprocess.SubprocessError):
         return "unknown", "unknown"
     return commit, dirty
