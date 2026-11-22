@@ -602,3 +602,32 @@ def sensitivity_forest(summary: pd.DataFrame, path: Path) -> None:
     fig.tight_layout()
     fig.savefig(path)
     plt.close(fig)
+
+
+def final_test_plot(metrics: pd.DataFrame, path: Path) -> None:
+    """Sealed-test scores (95% block-bootstrap interval) beside the cross-validated ones."""
+    names = ["macro_f1", "balanced_accuracy", "top2_accuracy"]
+    data = metrics.set_index("metric").loc[names]
+    y = np.arange(len(names))[::-1]
+    fig, ax = plt.subplots(figsize=(7, 2.8), dpi=150)
+    ax.errorbar(
+        data["test"],
+        y + 0.12,
+        xerr=[data["test"] - data["ci95_low"], data["ci95_high"] - data["test"]],
+        fmt="o",
+        color=CHOSEN,
+        ecolor=INK,
+        elinewidth=1,
+        capsize=3,
+        label="Sealed test set (95% interval)",
+    )
+    ax.plot(data["cv_knndm"], y - 0.12, "s", color=TARGET, label="Cross-validated (kNNDM)")
+    ax.set_yticks(y)
+    ax.set_yticklabels([_label(n) for n in names], fontsize=8)
+    ax.set_xlabel("Score")
+    ax.legend(frameon=False, fontsize=8, loc="lower right")
+    ax.spines[["top", "right"]].set_visible(False)
+    ax.set_title("Final model on the sealed test set", loc="left", fontsize=11)
+    fig.tight_layout()
+    fig.savefig(path)
+    plt.close(fig)

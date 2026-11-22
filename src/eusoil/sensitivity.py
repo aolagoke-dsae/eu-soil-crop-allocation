@@ -663,3 +663,28 @@ def robustness(summary: pd.DataFrame, reference: str = "reference") -> pd.DataFr
             }
         )
     return pd.DataFrame(rows)
+
+
+def country_prior_baseline(frame: pd.DataFrame, config: dict[str, Any]) -> float:
+    """Macro F1 of a model that knows only each point's country (the chance level of control a).
+
+    Labels permuted within each country keep every country's crop mix, and
+    the coordinates reveal the country, so this, not 1 / n_classes, is the
+    score a leak-free pipeline should reach on permuted labels (amendment A19).
+    Same folds and class weighting as the runs.
+    """
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.metrics import f1_score
+
+    x = pd.get_dummies(frame["country"]).to_numpy(dtype=float)
+    y = frame[TARGET].to_numpy()
+    scores = []
+    for repeat in range(1, config["split"]["outer_repeats"] + 1):
+        folds = frame[f"outer_fold_s{repeat}"].to_numpy()
+        pred = np.empty(len(frame), dtype=object)
+        for fold in np.unique(folds):
+            held = folds == fold
+            model = LogisticRegression(class_weight="balanced", max_iter=2000)
+            pred[held] = model.fit(x[~held], y[~held]).predict(x[held])
+        scores.append(f1_score(y, pred, average="macro"))
+    return float(np.mean(scores))

@@ -35,6 +35,10 @@ Phase 5:
 ``sensitivity``       every sensitivity run with fixed hyperparameters (resumable)
 ``sensitivity-report``  the summary table and the robustness verdicts
 
+Phase 6:
+
+``final-test``        the frozen model scored once on the sealed test set (refuses a second run)
+
 Each command reads the outputs of the earlier ones from ``data/interim`` and
 ``data/processed``.
 """
@@ -935,10 +939,117 @@ def cmd_sensitivity_report(args, config, paths) -> None:
         (summary["run"] == "permuted_labels") & (summary["hypothesis"] == "macro_f1_step5")
     ]
     if not control.empty:
-        LOG.info(
-            "negative control (labels permuted within country): macro F1 %.3f",
-            control["estimate"].iloc[0],
+        from eusoil.sensitivity import country_prior_baseline, prepare_data
+
+        variation = next(r for r in runs if r.name == "permuted_labels")
+        baseline = country_prior_baseline(prepare_data(data, config, variation, 0), config)
+        score = float(control["estimate"].iloc[0])
+        verdict = (
+            "pass" if score - baseline < config["precision"]["sesoi_macro_f1"] else "investigate"
         )
+        pd.DataFrame(
+            [
+                {
+                    "control": "labels permuted within country",
+                    "macro_f1_step5": score,
+                    "country_prior_baseline": baseline,
+                    "uniform_chance": 1 / data["crop_group"].nunique(),
+                    "excess_over_baseline": score - baseline,
+                    "verdict": verdict,
+                }
+            ]
+        ).to_csv(tables / "sensitivity_negative_control.csv", index=False)
+        LOG.info(
+            "negative control (labels permuted within country): macro F1 %.3f against a "
+            "country-only baseline of %.3f -> %s",
+            score,
+            baseline,
+            verdict,
+        )
+
+
+def cmd_final_test(args, config, paths) -> None:
+    import joblib
+
+    from eusoil import figures
+    from eusoil.final import SealBroken, check_seal, fit_final, score_test
+    from eusoil.models import evaluate, predictor_columns
+    from eusoil.stage_b import LADDER, load_predictions
+
+    tables, figs = paths.reports / "tables", paths.reports / "figures"
+    done = tables / "final_test_metrics.csv"
+    if done.exists():
+        sys.exit(
+            f"{done} exists: the sealed test set has been scored. The protocol allows one "
+            "score; a second run would make it a tuning set."
+        )
+    for needed in ("interpret_grouped_importance.csv", "sensitivity_robustness.csv"):
+        if not (tables / needed).exists():
+            sys.exit(f"{needed} not found: finish Phase 5 before opening the test set")
+    data, classes, block_km = _stage_b_common(paths, config)
+    step, params = _final_configuration(paths)
+    columns = predictor_columns(config, LADDER[step])
+
+    splits = pd.read_parquet(_splits_path(paths))
+    try:
+        check_seal(splits, pd.read_csv(tables / "split_seal.csv").loc[0, "sha256_test_ids"])
+    except SealBroken as error:
+        sys.exit(str(error))
+    table = pd.read_parquet(paths.processed / "modelling_table.parquet").merge(
+        splits[["point_id", "sealed_test"]], on="point_id", validate="one_to_one"
+    )
+    sealed = table[table["sealed_test"]]
+    test = sealed[sealed[columns].notna().all(axis=1)].reset_index(drop=True)
+    if set(data["point_id"]) & set(sealed["point_id"]):
+        sys.exit("training data contain sealed test points; refusing to fit")
+    LOG.info(
+        "final test: seal verified; training on %d points, scoring %d sealed points "
+        "(%d dropped for missing predictors); ladder step %d",
+        len(data),
+        len(test),
+        len(sealed) - len(test),
+        step,
+    )
+
+    model = fit_final(data, columns, params, config, n_jobs=args.n_jobs)
+    joblib.dump(model, paths.processed / "final_model.joblib")
+    out = score_test(
+        model,
+        test,
+        columns,
+        classes,
+        block_km * 1000.0,
+        config["stage_b"]["n_bootstrap"],
+        config["stage_a"]["ece_bins"],
+        np.random.default_rng(int(config["seed"]) + 20_000),
+    )
+
+    cv = load_predictions(_stage_b_dir(paths, "validation"), "knndm")
+    cv_scores = pd.DataFrame(
+        [
+            evaluate(g["y_true"].to_numpy(), g[[f"p__{c}" for c in classes]].to_numpy(), classes)
+            for _, g in cv.groupby("repeat")
+        ]
+    ).mean()
+    metrics = out["metrics"]
+    metrics["cv_knndm"] = metrics["metric"].map(cv_scores)
+    metrics["test_minus_cv"] = metrics["test"] - metrics["cv_knndm"]
+    metrics.insert(0, "n_test", len(test))
+    metrics.to_csv(done, index=False)
+    out["confusion"].to_csv(tables / "final_test_confusion_normalised.csv")
+    out["by_country"].to_csv(tables / "final_test_by_country.csv", index=False)
+    out["calibration"].to_csv(tables / "final_test_calibration.csv", index=False)
+    figures.final_test_plot(metrics, figs / "final_test.png")
+    figures.confusion_heatmap(out["confusion"], figs / "final_test_confusion.png")
+    row = metrics.set_index("metric").loc["macro_f1"]
+    LOG.info(
+        "final test: macro F1 %.3f (95%% %.3f to %.3f); cross-validated %.3f; difference %+.3f",
+        row["test"],
+        row["ci95_low"],
+        row["ci95_high"],
+        row["cv_knndm"],
+        row["test_minus_cv"],
+    )
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -979,6 +1090,10 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--runs", nargs="+", help="subset of runs by name (default: all)")
     p.add_argument("--n-jobs", type=int, default=-1, help="parallel jobs inside each fit")
     sub.add_parser("sensitivity-report", help="Phase 5: sensitivity summary and robustness")
+    p = sub.add_parser(
+        "final-test", help="Phase 6: score the frozen model once on the sealed test set"
+    )
+    p.add_argument("--n-jobs", type=int, default=-1, help="parallel jobs for the final fit")
     args = parser.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -1005,6 +1120,7 @@ def main(argv: list[str] | None = None) -> None:
         "interpret": cmd_interpret,
         "sensitivity": cmd_sensitivity,
         "sensitivity-report": cmd_sensitivity_report,
+        "final-test": cmd_final_test,
     }
     commands[args.command](args, config, paths)
 
